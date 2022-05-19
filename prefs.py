@@ -1,11 +1,11 @@
-APACHE_USER = "www-data"
-APACHE_GROUP = "www-data"
+APACHE_USER = "www-data"                        # используется в init.py для создания Sqlite базы.
+APACHE_GROUP = "www-data"                       # используется в init.py для создания Sqlite базы.
 DATA_PATH = "/var/www/upload/pult"              # папка, где хранится Sqlite база и zip-файлы отчетов
 SITE_DOMAIN = "http://infomed.med.1c.ru"        # URL домена, где опубликован сервис
 SITE_URL = "/a/pult"                            # часть URL публикации сервиса. Значение переменной должно заканчиваться на "pult" (требование 1С:Предприятие)
-SMTP_HOST = "localhost"
-SMTP_PORT = "25"
-SMTP_FROM = "root@infomed.med.1c.ru"
+SMTP_HOST = "localhost"                         # Если пустая строка, то отправок почты не будет
+SMTP_PORT = "25"                                # Если почта отправляется, то указание значения обязательно
+SMTP_FROM = "root@infomed.med.1c.ru"            # Если пустая строка, то отправок почты не будет
 SMTP_LOGIN = ""
 SMTP_PASSWORD =  ""
 
