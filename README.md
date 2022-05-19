@@ -54,7 +54,9 @@
 
 ### Настройки apache для wsgi
 1) Подключить модуль mod_wsgi из пакета libapache2-mod-wsgi-py3
-2) Зарегистрировать приложение WSGI
+2) Скопировать файлы pult.wsgi, prefs.py, init.py в папку /var/www/wsgi/pult.
+3) Внести настройки экземпляра сервиса в prefs.py
+4) Зарегистрировать приложение WSGI
 ```
 	WSGIScriptAlias /wsgi/pult /var/www/wsgi/pult/pult.wsgi
 ```
