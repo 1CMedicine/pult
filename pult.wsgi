@@ -56,6 +56,30 @@ def array2str(arrs, sql, q=True):
         print("'", sep='', end='', file=sql)
 
 
+def prepareErrorTable(cur, output, errorN = 0):
+    print("<table width='100%' border=1><tr>", sep='', file=output)
+    if errorN == 0:
+        print("<th>N ошибки</th>", sep='', end='', file=output)
+    print("<th>Ошибки, errors</th><th>Конфигурация</th><th>Расширения, extentions</th><th>Метка</th></tr>", sep='', file=output)
+    for r in cur.fetchall():
+        errors_json = json.loads(r[1].replace("&quot;", "\""))
+        if len(r[5]) > 2:
+            ext_json = json.loads(r[5].replace("&quot;", "\""))
+        else:
+            ext_json = None
+        print("<tr", sep='', end='', file=output)
+        if r[6] == 1:
+            print(" class='marked'", sep='', end='', file=output)
+        print(">", sep='', end='', file=output)
+        if errorN == 0:
+            print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
+        print("<td>", json2html.convert(json=errors_json),"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else json2html.convert(json=ext_json),"</td>", sep='', end='', file=output)
+        print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/></td></tr>", sep='', file=output)
+
+    print("</table>", sep='', file=output)
+
+
+
 def readReport(fzip_name, environ):
     tdir = tempfile.TemporaryDirectory()
 
@@ -153,6 +177,9 @@ table {
     font-variant: normal;
     font-family: Verdana, Tahoma, Arial, sans-serif;
 }
+.marked {
+    background-color: rgb(190,255,255);
+}
 .settings_table {
     width: 50%;
     font-family: Verdana, Tahoma, Arial, sans-serif;
@@ -171,6 +198,45 @@ p  {
             ('Content-Length', str(len(style)))
         ])
         return [style]
+
+
+    if environ['PATH_INFO'] == '/tables.js':
+        output = StringIO()
+        print('''function mark(line) {
+    checkbox = document.getElementById(line)
+    var error = line.substring(4)
+    var v = checkbox.checked
+    var http = new XMLHttpRequest();
+    http.open('POST', "''',  prefs.SITE_URL,  '''/markError/"+error, true);
+    http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+    http.onreadystatechange = function() {
+        if (http.status != 200) {
+            alert(http.status + " " + http.responseText);
+        }
+    }
+    if (v == 0) {
+        http.send("0")
+        checkbox.parentElement.parentElement.classList.remove("marked")
+    } else {
+        http.send("1")
+        checkbox.parentElement.parentElement.classList.add("marked")
+    }
+}
+function selectConfig(configName) {
+    if (configName != 'sn')
+        document.location.href="''', prefs.SITE_URL, '''/errorsList/"+configName.substring(1)
+    else
+        document.location.href="''', prefs.SITE_URL, '''/errorsList"
+}''', sep='', file=output)
+
+        ret = output.getvalue().encode('UTF-8')
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(ret)))
+        ])
+        return [ret]
+
 
     if environ['PATH_INFO'] == '/getInfo':
         length= int(environ.get('CONTENT_LENGTH', '0'))
@@ -195,6 +261,7 @@ p  {
             ('Content-Length', str(len(ret)))
         ])
         return [ret]
+
 
     if environ['PATH_INFO'] == '/pushReport':
         fzip = read(environ)
@@ -353,25 +420,26 @@ p  {
         ])
         return b""
 
+
     if environ['PATH_INFO'] == '/settings':
         output = StringIO()
-        print('<html><head>', sep='', file=output)
-        print("<meta charset='utf-8'>", sep='', file=output)
-        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
-        print("<title>Настройки сервиса регистрации ошибок 1С:Медицина</title>", sep='', file=output)
-        print("</head><body><H2>Настройки сервиса регистрации ошибок</H2>", sep='', file=output)
-        print("<p>Конфигурации и их версии, по которым принимаются отчеты об ошибках - </p>", json2html.convert(json=prefs.CONFIGS, table_attributes="border=1 class='settings_table'"), sep='', file=output)
-        print("<p>В словаре (dict) ключ - имя конфигурации, значение - массив из 2-х массивов.</p>", sep='', file=output)
-        print("<ul><li class='refli'>1-й список - список допустимых версий. Если список пустой, то отчеты не принимаются.", sep='', file=output)
-        print("Пустая строка в версия - принимаются любые версии. Неполное задание версии допускатся.</li>", sep='', file=output)
-        print("<li class='refli'>2-й список - список email, которым будет отправлено сообщение о регистрации новой ошибки.</li></ul>", sep='', file=output)
-        print("<p>Отчет считается новой ошибкой, если образуется уникальная комбинация из следующих данных из отчета:</p>", sep='', file=output)
-        print("<ul><li class='refli'>Наименование конфигурации</li>", sep='', file=output)
-        print("<li class='refli'>Версия конфигурации</li>", sep='', file=output)
-        print("<li class='refli'>Установленные расширения</li>", sep='', file=output)
-        print("<li class='refli'>Текст ошибки</li>", sep='', file=output)
-        print("<li class='refli'>Хеш стека ошибки конфигурации</li></ul>", sep='', file=output)
-        print("<p>Если список пустой, то почта для этой конфигурации не отправляется.</p>", sep='', file=output)
+        print('''<html><head>
+<meta charset='utf-8'>
+<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css">
+<title>Настройки сервиса регистрации ошибок 1С:Медицина</title>
+</head><body><H2>Настройки сервиса регистрации ошибок</H2>
+<p>Конфигурации и их версии, по которым принимаются отчеты об ошибках - </p>''', json2html.convert(json=prefs.CONFIGS, table_attributes="border=1 class='settings_table'"), '''
+<p>В словаре (dict) ключ - имя конфигурации, значение - массив из 2-х массивов.</p>
+<ul><li class='refli'>1-й список - список допустимых версий. Если список пустой, то отчеты не принимаются.
+Пустая строка в версия - принимаются любые версии. Неполное задание версии допускатся.</li>
+<li class='refli'>2-й список - список email, которым будет отправлено сообщение о регистрации новой ошибки.</li></ul>
+<p>Отчет считается новой ошибкой, если образуется уникальная комбинация из следующих данных из отчета:</p>
+<ul><li class='refli'>Наименование конфигурации</li>
+<li class='refli'>Версия конфигурации</li>
+<li class='refli'>Установленные расширения</li>
+<li class='refli'>Текст ошибки</li>
+<li class='refli'>Хеш стека ошибки конфигурации</li></ul>
+<p>Если список пустой, то почта для этой конфигурации не отправляется.</p>''', sep='', file=output)
 
         print("<hr>Для изменения настроек необходимо изменить значения соответствующих переменных в файле prefs.py. После чего перестартовать апач.", sep='', file=output)
         print("<hr><h3>Перейти:</h3>", sep='', file=output)
@@ -385,6 +453,7 @@ p  {
             ('Content-Length', str(len(ret)))
         ])
         return [ret]
+
 
     if environ['PATH_INFO'] == '/clear':
         output = StringIO()
@@ -459,50 +528,16 @@ p  {
         ])
         return [ret]
 
+
     url = environ['PATH_INFO'].split('/')
     if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
         output = StringIO()
-        print('<html><head>', sep='', file=output)
-        print("<meta charset='utf-8'>", sep='', file=output)
-        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
-        print("<title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>", sep='', file=output)
-        print('''<script>
-function mark(line) {
-    var error = line.substring(4)
-    var v = document.getElementById(line).checked
-    var http = new XMLHttpRequest();
-    http.open('POST', "''',  prefs.SITE_URL,  '''/markError/"+error, true);
-    http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-
-    http.onreadystatechange = function() {
-        if (http.status != 200) {
-            alert(http.status + " " + http.responseText);
-        }
-    }
-    http.send((v == 0) ? "0" : "1")
-}
-function selectConfig(configName) {
-    if (configName != 'sn')
-        document.location.href="''', prefs.SITE_URL, '''/errorsList/"+configName.substring(1)
-    else
-        document.location.href="''', prefs.SITE_URL, '''/errorsList"
-}
-</script>''', sep='', file=output)
-
-        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
-        conn.execute("PRAGMA foreign_keys=OFF;")
-        cur = conn.cursor()
-
-        if len(url) == 2:
-            SQLPacket = "select * from reportStack order by stackId desc"
-        else:
-            SQLPacket = "select * from reportStack where configName='"+CONFIG_NAMES[int(url[2])]+"' order by stackId desc"
-        cur = conn.cursor()
-        cur.execute(SQLPacket)
-
-        print("</head><body><H2>Список ошибок сервиса регистрации ошибок</H2>", sep='', file=output)
-        print("<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>", sep='', file=output)
-        print("<p><a href='", prefs.SITE_URL,"/settings'>Настройки сервиса</a></p>", sep='',  file=output)
+        print('''<html><head>
+<meta charset='utf-8'>
+<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
+<script src="''', prefs.SITE_URL, '''/tables.js"></script>
+<title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
+</head><body><H2>Список ошибок сервиса регистрации ошибок</H2>''', sep='', file=output)
 
         print("<br><p>Фильтр на конфигурацию: <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
         if len(url) == 2:
@@ -515,19 +550,23 @@ function selectConfig(configName) {
             else:
                 print("<option value='s", i, "'>"+CONFIG_NAMES[i]+"</option>", sep='', file=output)
         print("</select></p>", sep='', file=output)
-        print("<table width='100%' border=1><tr><th>N ошибки</th><th>Ошибки, errors</th><th>Конфигурация</th><th>Расширения, extentions</th><th>Метка</th></tr>", sep='', file=output)
-        for r in cur.fetchall():
-            errors_json = json.loads(r[1].replace("&quot;", "\""))
-            if len(r[5]) > 2:
-                ext_json = json.loads(r[5].replace("&quot;", "\""))
-            else:
-                ext_json = None
-            print("<tr><td align='center'>", "<span class='errorId'><a href='", prefs.SITE_URL, "/reports/",str(r[0]),"'>",str(r[0]),"</a></span>", "</td><td>", json2html.convert(json=errors_json),"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else json2html.convert(json=ext_json),"</td>", sep='', end='', file=output)
-            print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/></td></tr>", sep='', file=output)
 
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=OFF;")
+        cur = conn.cursor()
+        if len(url) == 2:
+            SQLPacket = "select * from reportStack order by stackId desc"
+        else:
+            SQLPacket = "select * from reportStack where configName='"+CONFIG_NAMES[int(url[2])]+"' order by stackId desc"
+        cur = conn.cursor()
+        cur.execute(SQLPacket)
+        prepareErrorTable(cur, output)
         cur.close()
-        print("</table>", sep='', file=output)
-        print("</body></html>", sep='', end='', file=output)
+        conn.close()
+
+        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
+<p><a href="''', prefs.SITE_URL,'''/settings">Настройки сервиса</a></p>
+</body></html>''', sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
         start_response('200 OK', [
@@ -544,8 +583,8 @@ function selectConfig(configName) {
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
-        cur = conn.cursor()
 
+        cur = conn.cursor()
         SQLPacket = "select marked from reportStack where stackId="+url[2]
         cur = conn.cursor()
         cur.execute(SQLPacket)
@@ -575,21 +614,23 @@ function selectConfig(configName) {
         output = StringIO()
         print('''<html><head>
 <meta charset='utf-8'>
-<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css">
+<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
+<script src="''', prefs.SITE_URL, '''/tables.js"></script>
 <title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
-        cur = conn.cursor()
 
-        SQLPacket = "select * from report where reportStackId="+url[2]+" order by rowid desc"
+        print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span></h2>", sep='', file=output)
+
+        cur = conn.cursor()
+        SQLPacket = "select * from reportStack where stackId="+url[2]
         cur = conn.cursor()
         cur.execute(SQLPacket)
+        prepareErrorTable(cur, output, url[2])
+        cur.close()
 
-        print("</head><body><h2>Список отчетов об ошибке <span class='errorId'>"+url[2]+"</span></h2>", sep='', file=output)
-        print("<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>", sep='', file=output)
-        print("<p><a href='", prefs.SITE_URL, "/errorsList'>Список ошибок</a></p>", sep='', file=output)
-        print('''<table width='100%' border=1><tr>
+        print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
 <th>Пользователь 1С</th>
 <th>IP адрес</th>
@@ -601,11 +642,18 @@ function selectConfig(configName) {
 <th>changeEnabled</th>
 <th>Описание пользователя</th>
 <th>Число отчетов</th></tr>''', sep='', file=output)
+        cur = conn.cursor()
+        SQLPacket = "select * from report where reportStackId="+url[2]+" order by rowid desc"
+        cur = conn.cursor()
+        cur.execute(SQLPacket)
         for r in cur.fetchall():
             print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/report/",r[9],"'>",'Файл(ы)' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
 
         cur.close()
+        conn.close()
         print("</table>", sep='', file=output)
+        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
+<p><a href="''', prefs.SITE_URL, '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -614,6 +662,7 @@ function selectConfig(configName) {
             ('Content-Length', str(len(ret)))
         ])
         return [ret]
+
 
     if len(url) == 3 and url[1] == 'report':
         status = '200 OK'
