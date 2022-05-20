@@ -13,6 +13,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.header import Header
 from threading import Thread
+import datetime
 
 local_path = os.path.split(__file__)[0]
 if local_path not in sys.path:
@@ -74,7 +75,9 @@ def prepareErrorTable(cur, output, errorN = 0):
         if errorN == 0:
             print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
         print("<td>", json2html.convert(json=errors_json),"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else json2html.convert(json=ext_json),"</td>", sep='', end='', file=output)
-        print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/></td></tr>", sep='', file=output)
+        print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
+        print("</td></tr>", sep='', file=output)
 
     print("</table>", sep='', file=output)
 
@@ -595,7 +598,8 @@ function selectConfig(configName) {
             raise Exception("Wrong value of error - "+url[2])
 
         if str(err[0]) != value:
-            SQLPacket = "update reportStack set marked="+value+" where stackId="+url[2]
+            user = "" if 'REMOTE_USER' not in environ else environ['REMOTE_USER']
+            SQLPacket = "update reportStack set marked="+value+", markedTime='"+datetime.datetime.now().strftime('%d.%m.%y %H:%M')+"', markedUser='"+user+"' where stackId="+url[2]
             cur = conn.cursor()
             cur.execute(SQLPacket)
             cur.close()

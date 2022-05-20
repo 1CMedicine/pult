@@ -29,6 +29,8 @@ cur.execute("""create table if not exists reportStack (
     configVersion TEXT NOT NULL,
     extentions TEXT NOT NULL,
     marked BOOLEAN NOT NULL CHECK (marked IN (0, 1)),
+    markedUser TEXT NOT NULL DEFAULT '',
+    markedTime TEXT NOT NULL DEFAULT '',
     UNIQUE(errors, stackHash, configName, configVersion, extentions)
 );""")
 
@@ -47,6 +49,7 @@ cur.execute("""create table if not exists report (
     reportStackId INTEGER NOT NULL,
     userDescription TEXT NULL,
     REMOTE_ADDR TEXT NOT NULL,
+    hasFiles BOOLEAN NOT NULL CHECK (hasFiles IN (0, 1)),
     FOREIGN KEY(reportStackId) REFERENCES reportStack(stackId)
 );""")
 
