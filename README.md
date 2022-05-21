@@ -70,3 +70,17 @@
     Require valid-user
 </Location>
 ```
+
+Пример содержимого файла auth.wsgi
+```
+USERS = {
+    "test" : "test"
+}
+
+def check_password(environ, user, password):
+    if user in USERS:
+        if password == USERS[user]:
+            return True
+    return False
+```
+
