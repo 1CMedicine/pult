@@ -73,7 +73,7 @@ def prepareErrorTable(cur, output, errorN = 0):
             print(" class='marked'", sep='', end='', file=output)
         print(">", sep='', end='', file=output)
         if errorN == 0:
-            print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
+            print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
         print("<td>", json2html.convert(json=errors_json),"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else json2html.convert(json=ext_json),"</td>", sep='', end='', file=output)
         print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
@@ -122,7 +122,7 @@ def send_mail():
             output = StringIO()
             print('Новые ошибки в сервисе регистрации ошибок:', sep='', end='\n', file=output)
             for r in errors[configName]:
-                print('   ', prefs.SITE_DOMAIN, prefs.SITE_URL, "/reports/", r, sep='', end='\n', file=output)
+                print('   ', prefs.SITE_DOMAIN, prefs.SITE_URL, "/s/reports/", r, sep='', end='\n', file=output)
 
             msg = MIMEText(output.getvalue(), 'plain', 'utf-8')
             msg['Subject'] = Header('Новые ошибки '+configName+' в сервисе регистрации ошибок', 'utf-8')
@@ -210,7 +210,7 @@ p  {
     var error = line.substring(4)
     var v = checkbox.checked
     var http = new XMLHttpRequest();
-    http.open('POST', "''',  prefs.SITE_URL,  '''/markError/"+error, true);
+    http.open('POST', "''',  prefs.SITE_URL, '''/s/markError/"+error, true);
     http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
 
     http.onreadystatechange = function() {
@@ -228,9 +228,9 @@ p  {
 }
 function selectConfig(configName) {
     if (configName != 'sn')
-        document.location.href="''', prefs.SITE_URL, '''/errorsList/"+configName.substring(1)
+        document.location.href="''', prefs.SITE_URL, '''/s/errorsList/"+configName.substring(1)
     else
-        document.location.href="''', prefs.SITE_URL, '''/errorsList"
+        document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
 }''', sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -424,7 +424,7 @@ function selectConfig(configName) {
         return b""
 
 
-    if environ['PATH_INFO'] == '/settings':
+    if environ['PATH_INFO'] == '/s/settings':
         output = StringIO()
         print('''<html><head>
 <meta charset='utf-8'>
@@ -446,8 +446,8 @@ function selectConfig(configName) {
 
         print("<hr>Для изменения настроек необходимо изменить значения соответствующих переменных в файле prefs.py. После чего перестартовать апач.", sep='', file=output)
         print("<hr><h3>Перейти:</h3>", sep='', file=output)
-        print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/errorsList'>Список ошибок</a></lu>", sep='', file=output)
-        print("<li class='refli'><a href='", prefs.SITE_URL,"/clear'>Удаление отчетов неподдерживаемых версий и конфигураций</a></li>", sep='', file=output)
+        print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></lu>", sep='', file=output)
+        print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций</a></li>", sep='', file=output)
         print("</ul></body></html>", sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -458,7 +458,7 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if environ['PATH_INFO'] == '/clear':
+    if environ['PATH_INFO'] == '/s/clear':
         output = StringIO()
         print('<html><head>', sep='', end='', file=output)
         print("<meta charset='utf-8'>", sep='', file=output)
@@ -466,7 +466,7 @@ function selectConfig(configName) {
         print("<title>Удаление отчетов неподдерживаемых версий и конфигураций</title>", sep='', file=output)
         print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций</h2>", sep='', file=output)
         print("<p>Поддерживаемые конфигурации - ", json2html.convert(json=prefs.CONFIGS, table_attributes="border=1 class='settings_table'"), "</p>", sep='', file=output)
-        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/errorsList'>Список ошибок</a></p>", sep='', file=output)
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
@@ -533,6 +533,11 @@ function selectConfig(configName) {
 
 
     url = environ['PATH_INFO'].split('/')
+    s = url.pop(0)          # все нижелащие url находятся в зоне с ограниченным доступом, префикс должен быть равен 's'
+    if url[0] != 's':
+        start_response('404 Not Found', [('Content-Type','text/html; charset=utf-8')])
+        return [b'<p>Page Not Found</p>'+environ['PATH_INFO'].encode('UTF-8')+b'\n']
+
     if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
         output = StringIO()
         print('''<html><head>
@@ -568,7 +573,7 @@ function selectConfig(configName) {
         conn.close()
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
-<p><a href="''', prefs.SITE_URL,'''/settings">Настройки сервиса</a></p>
+<p><a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
 </body></html>''', sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -651,13 +656,13 @@ function selectConfig(configName) {
         cur = conn.cursor()
         cur.execute(SQLPacket)
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/report/",r[9],"'>",'Файл(ы)' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s/report/",r[9],"'>",'Файл(ы)' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
 
         cur.close()
         conn.close()
         print("</table>", sep='', file=output)
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
-<p><a href="''', prefs.SITE_URL, '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
+<p><a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
