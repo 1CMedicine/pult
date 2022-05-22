@@ -81,6 +81,7 @@ def check_password(environ, user, password):
     if user in USERS:
         if password == USERS[user]:
             return True
-    return False
+        return False
+    return None
 ```
 
