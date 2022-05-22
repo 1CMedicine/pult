@@ -3,7 +3,6 @@ APACHE_GROUP = "www-data"                       # используется в in
 DATA_PATH = "/var/www/upload/pult"              # папка, где хранится Sqlite база и zip-файлы отчетов
 SITE_DOMAIN = "http://your.domain"              # URL домена, где опубликован сервис
 SITE_URL = "/a/pult"                            # Часть URL публикации сервиса
-RESTICTED_AREA_PREFIX = "/s"                    # Префикс закрытой зоны. Пустое значение если не используется ограничения доступа к страницам
 SMTP_HOST = "localhost"                         # Если пустая строка, то отправок почты не будет
 SMTP_PORT = "25"                                # Если почта отправляется, то указание значения обязательно
 SMTP_FROM = "root@your.domain"                  # Если пустая строка, то отправок почты не будет
