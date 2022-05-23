@@ -51,7 +51,7 @@ def array2str(arrs, sql, q=True):
         if type(line) == list:
             array2str(line, sql, False)
         else:
-            print('&quot;', line, '&quot;', sep='', end='', file=sql)
+            print('&quot;', line.replace('\n', "<br>"), '&quot;', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
     if q:
         print("'", sep='', end='', file=sql)
@@ -74,7 +74,18 @@ def prepareErrorTable(cur, output, errorN = 0):
         print(">", sep='', end='', file=output)
         if errorN == 0:
             print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
-        print("<td>", json2html.convert(json=errors_json),"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else json2html.convert(json=ext_json),"</td>", sep='', end='', file=output)
+
+        try:
+            errors_txt = json2html.convert(json=errors_json, escape=0)
+        except ValueError:
+            erros_txt = str(errors_json)
+
+        try:
+            ext_txt = json2html.convert(json=ext_json)
+        except ValueError:
+            ext_txt = str(ext_json)
+
+        print("<td>", errors_txt,"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else ext_txt,"</td>", sep='', end='', file=output)
         print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
         print("</td></tr>", sep='', file=output)
@@ -655,12 +666,24 @@ function selectConfig(configName) {
         SQLPacket = "select * from report where reportStackId="+url[2]+" order by rowid desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
+        found = False
         for r in cur.fetchall():
             print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s/report/",r[9],"'>",'Файл(ы)' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            found = True
 
         cur.close()
         conn.close()
         print("</table>", sep='', file=output)
+
+
+        if not found:
+            output = StringIO()
+            print('''<html><head>
+<meta charset='utf-8'>
+<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
+<title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
+            print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span> Не найдена</h2>", sep='', file=output)
+
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
 <p><a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
