@@ -59,6 +59,7 @@ cur.execute("""create table if not exists smtpQueue (
 );""")
 
 cur.execute("CREATE INDEX IF NOT EXISTS report_stack_index ON report (reportStackId);")
+cur.execute("CREATE INDEX IF NOT EXISTS reportStack_stack_index ON reportStack (stackId);")
 conn.commit()
 
 uid = pwd.getpwnam(prefs.APACHE_USER).pw_uid
