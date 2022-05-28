@@ -51,7 +51,7 @@ def array2str(arrs, sql, q=True):
         if type(line) == list:
             array2str(line, sql, False)
         else:
-            print('&quot;', line.replace('\n', "<br>"), '&quot;', sep='', end='', file=sql)
+            print('&quot;', line.replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '&quot;', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
     if q:
         print("'", sep='', end='', file=sql)
@@ -267,7 +267,7 @@ function selectConfig(configName) {
                     break
 
         if needSendReport:
-            ret = '{"needSendReport":true,"userMessage":"Рекомендуем сформировать и отправить отчет разработчикам 1С:Медицина. При необходимости получения обратной связи свяжитесь с линий консультации по адресу med@1c.ru"}'.encode('UTF-8')
+            ret = '{"needSendReport":true,"userMessage":"Рекомендуем сформировать и отправить отчет разработчикам 1С:Медицина. При необходимости получения обратной связи свяжитесь с линией консультации по адресу med@1c.ru"}'.encode('UTF-8')
         else:
             ret = b'{"needSendReport":false}'
         start_response('200 OK', [
