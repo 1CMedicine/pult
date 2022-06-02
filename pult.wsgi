@@ -57,7 +57,7 @@ def array2str(arrs, sql, q=True):
         print("'", sep='', end='', file=sql)
 
 
-def prepareErrorTable(cur, output, errorN = 0):
+def prepareErrorTable(cur, output, secret, errorN = 0):
     print("<table width='100%' border=1><tr>", sep='', file=output)
     if errorN == 0:
         print("<th>N ошибки</th>", sep='', end='', file=output)
@@ -69,11 +69,11 @@ def prepareErrorTable(cur, output, errorN = 0):
         else:
             ext_json = None
         print("<tr", sep='', end='', file=output)
-        if r[6] == 1:
+        if len(r[6]) != 0:
             print(" class='marked'", sep='', end='', file=output)
         print(">", sep='', end='', file=output)
         if errorN == 0:
-            print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
+            print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
 
         try:
             errors_txt = json2html.convert(json=errors_json, escape=0)
@@ -86,7 +86,10 @@ def prepareErrorTable(cur, output, errorN = 0):
             ext_txt = str(ext_json)
 
         print("<td>", errors_txt,"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else ext_txt,"</td>", sep='', end='', file=output)
-        print("<td align='center'><input type='checkbox' id='line",str(r[0]), "' ", "checked " if r[6] == 1 else "", " onclick='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        if secret:
+            print("<td align='center'><input type='text' size='6' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        else:
+            print("<td align='center'><input type='text' size='6' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
         print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
         print("</td></tr>", sep='', file=output)
 
@@ -217,9 +220,9 @@ p  {
     if environ['PATH_INFO'] == '/tables.js':
         output = StringIO()
         print('''function mark(line) {
-    checkbox = document.getElementById(line)
+    input = document.getElementById(line)
     var error = line.substring(4)
-    var v = checkbox.checked
+    var v = input.value
     var http = new XMLHttpRequest();
     http.open('POST', "''',  prefs.SITE_URL, '''/s/markError/"+error, true);
     http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
@@ -229,12 +232,11 @@ p  {
             alert(http.status + " " + http.responseText);
         }
     }
-    if (v == 0) {
-        http.send("0")
-        checkbox.parentElement.parentElement.classList.remove("marked")
+    http.send(v)
+    if (v.length == 0) {
+        input.parentElement.parentElement.classList.remove("marked")
     } else {
-        http.send("1")
-        checkbox.parentElement.parentElement.classList.add("marked")
+        input.parentElement.parentElement.classList.add("marked")
     }
 }
 function selectConfig(configName) {
@@ -361,7 +363,7 @@ function selectConfig(configName) {
                 else:
                     print("''", file=sql)
 
-                print(",0)", sep='', end='', file=sql)
+                print(",'')", sep='', end='', file=sql)
                 cur = conn.cursor()
                 cur.execute(sql.getvalue())
                 sql.close()
@@ -457,7 +459,7 @@ function selectConfig(configName) {
 
         print("<hr>Для изменения настроек необходимо изменить значения соответствующих переменных в файле prefs.py. После чего перестартовать апач.", sep='', file=output)
         print("<hr><h3>Перейти:</h3>", sep='', file=output)
-        print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></lu>", sep='', file=output)
+        print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s" if secret else "", "/errorsList'>Список ошибок</a></lu>", sep='', file=output)
         print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций</a></li>", sep='', file=output)
         print("</ul></body></html>", sep='', end='', file=output)
 
@@ -544,10 +546,9 @@ function selectConfig(configName) {
 
 
     url = environ['PATH_INFO'].split('/')
-    s = url.pop(0)          # все нижелащие url находятся в зоне с ограниченным доступом, префикс должен быть равен 's'
-    if url[0] != 's':
-        start_response('404 Not Found', [('Content-Type','text/html; charset=utf-8')])
-        return [b'<p>Page Not Found</p>'+environ['PATH_INFO'].encode('UTF-8')+b'\n']
+    secret = True if url[1] == 's' else False
+    if secret:          # все нижелащие url могут находится в зоне с ограниченным доступом, префикс может быть равен 's'
+        s = url.pop(0)
 
     if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
         output = StringIO()
@@ -558,17 +559,18 @@ function selectConfig(configName) {
 <title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
 </head><body><H2>Список ошибок сервиса регистрации ошибок</H2>''', sep='', file=output)
 
-        print("<br><p>Фильтр на конфигурацию: <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
-        if len(url) == 2:
-            print("<option value='sn' selected/>", sep='', file=output)
-        else:
-            print("<option value='sn'/>", sep='', file=output)
-        for i in range(len(CONFIG_NAMES)):
-            if len(url) == 3 and i == int(url[2]):
-                print("<option value='s", i, "' selected>"+CONFIG_NAMES[i]+"</option>", sep='', file=output)
+        if secret:
+            print("<br><p>Фильтр на конфигурацию: <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
+            if len(url) == 2:
+                print("<option value='sn' selected/>", sep='', file=output)
             else:
-                print("<option value='s", i, "'>"+CONFIG_NAMES[i]+"</option>", sep='', file=output)
-        print("</select></p>", sep='', file=output)
+                print("<option value='sn'/>", sep='', file=output)
+            for i in range(len(CONFIG_NAMES)):
+                if len(url) == 3 and i == int(url[2]):
+                    print("<option value='s", i, "' selected>", CONFIG_NAMES[i], "</option>", sep='', file=output)
+                else:
+                    print("<option value='s", i, "'>", CONFIG_NAMES[i], "</option>", sep='', file=output)
+            print("</select></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
@@ -579,7 +581,7 @@ function selectConfig(configName) {
             SQLPacket = "select * from reportStack where configName='"+CONFIG_NAMES[int(url[2])]+"' order by stackId desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
-        prepareErrorTable(cur, output)
+        prepareErrorTable(cur, output, secret)
         cur.close()
         conn.close()
 
@@ -595,7 +597,7 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if len(url) == 3 and url[1] == 'markError' and url[2].isdigit():
+    if secret and len(url) == 3 and url[1] == 'markError' and url[2].isdigit():         # только закрытая зона так как измение отметки
         output = StringIO()
         length= int(environ.get('CONTENT_LENGTH', '0'))
         value = environ['wsgi.input'].read(length).decode('utf-8')
@@ -611,11 +613,11 @@ function selectConfig(configName) {
         cur.close()
 
         if err is None:
-            raise Exception("Wrong value of error - "+url[2])
+            raise Exception("Error - '"+url[2]+"' not found")
 
-        if str(err[0]) != value:
+        if err[0] != value:
             user = "" if 'REMOTE_USER' not in environ else environ['REMOTE_USER']
-            SQLPacket = "update reportStack set marked="+value+", markedTime='"+datetime.datetime.now().strftime('%d.%m.%y %H:%M')+"', markedUser='"+user+"' where stackId="+url[2]
+            SQLPacket = "update reportStack set marked='"+value+"', markedTime='"+datetime.datetime.now().strftime('%d.%m.%y %H:%M')+"', markedUser='"+user+"' where stackId="+url[2]
             cur = conn.cursor()
             cur.execute(SQLPacket)
             cur.close()
@@ -630,7 +632,7 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if len(url) == 3 and url[1] == 'reports' and url[2].isdigit():
+    if len(url) == 3 and url[1] == 'reports' and url[2].isdigit():      # список отчетов в открытой и закрытой зонах
         output = StringIO()
         print('''<html><head>
 <meta charset='utf-8'>
@@ -647,7 +649,7 @@ function selectConfig(configName) {
         SQLPacket = "select * from reportStack where stackId="+url[2]
         cur = conn.cursor()
         cur.execute(SQLPacket)
-        prepareErrorTable(cur, output, url[2])
+        prepareErrorTable(cur, output, secret, url[2])
         cur.close()
 
         print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
@@ -685,7 +687,7 @@ function selectConfig(configName) {
             print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span> Не найдена</h2>", sep='', file=output)
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
-<p><a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', file=output)
+<p><a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -696,7 +698,7 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if len(url) == 3 and url[1] == 'report':
+    if len(url) == 3 and url[1] == 'report':    # отчет в открытой и закрытой зонах
         status = '200 OK'
         response_headers = [('Content-type', 'application/zip')]
         start_response(status, response_headers)

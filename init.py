@@ -28,7 +28,7 @@ cur.execute("""create table if not exists reportStack (
     configName TEXT NOT NULL,
     configVersion TEXT NOT NULL,
     extentions TEXT NOT NULL,
-    marked BOOLEAN NOT NULL CHECK (marked IN (0, 1)),
+    marked TEXT NOT NULL DEFAULT '',
     markedUser TEXT NOT NULL DEFAULT '',
     markedTime TEXT NOT NULL DEFAULT '',
     UNIQUE(errors, stackHash, configName, configVersion, extentions)
