@@ -51,7 +51,7 @@ def array2str(arrs, sql, q=True):
         if type(line) == list:
             array2str(line, sql, False)
         else:
-            print('&quot;', line.replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '&quot;', sep='', end='', file=sql)
+            print('&quot;', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '&quot;', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
     if q:
         print("'", sep='', end='', file=sql)
