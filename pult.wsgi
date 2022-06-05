@@ -85,7 +85,7 @@ def prepareErrorTable(cur, output, secret, errorN = 0):
         except ValueError:
             ext_txt = str(ext_json)
 
-        print("<td>", errors_txt,"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else ext_txt,"</td>", sep='', end='', file=output)
+        print("<td>", errors_txt,"Хеш стека: ",r[2],"</td><td>",r[3], ", ", r[4],"</td><td>",ext_json is None if "" else ext_txt,"</td>", sep='', end='', file=output)
         if secret:
             print("<td align='center'><input type='text' size='6' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         else:
@@ -439,7 +439,7 @@ function selectConfig(configName) {
 
     if environ['PATH_INFO'] == '/s/settings':
         output = StringIO()
-        print('''<html><head>
+        print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css">
 <title>Настройки сервиса регистрации ошибок 1С:Медицина</title>
@@ -473,7 +473,7 @@ function selectConfig(configName) {
 
     if environ['PATH_INFO'] == '/s/clear':
         output = StringIO()
-        print('<html><head>', sep='', end='', file=output)
+        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
         print("<meta charset='utf-8'>", sep='', file=output)
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
         print("<title>Удаление отчетов неподдерживаемых версий и конфигураций</title>", sep='', file=output)
@@ -552,7 +552,7 @@ function selectConfig(configName) {
 
     if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
         output = StringIO()
-        print('''<html><head>
+        print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
@@ -634,7 +634,7 @@ function selectConfig(configName) {
 
     if len(url) == 3 and url[1] == 'reports' and url[2].isdigit():      # список отчетов в открытой и закрытой зонах
         output = StringIO()
-        print('''<html><head>
+        print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
@@ -680,7 +680,7 @@ function selectConfig(configName) {
 
         if not found:
             output = StringIO()
-            print('''<html><head>
+            print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
