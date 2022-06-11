@@ -21,17 +21,25 @@ conn = sqlite3.connect(prefs.DATA_PATH+'/reports.db')
 conn.execute("PRAGMA foreign_keys=ON;")
 cur = conn.cursor()
 
-cur.execute("""create table if not exists reportStack (
-    stackId INTEGER PRIMARY KEY,
+cur.execute("""create table if not exists issue (
+    issueId INTEGER PRIMARY KEY,
     errors TEXT NOT NULL,
     stackHash TEXT NOT NULL,
-    configName TEXT NOT NULL,
-    configVersion TEXT NOT NULL,
-    extentions TEXT NOT NULL,
     marked TEXT NOT NULL DEFAULT '',
     markedUser TEXT NOT NULL DEFAULT '',
     markedTime TEXT NOT NULL DEFAULT '',
-    UNIQUE(errors, stackHash, configName, configVersion, extentions)
+    UNIQUE(errors, stackHash)
+);""")
+
+
+cur.execute("""create table if not exists reportStack (
+    stackId INTEGER PRIMARY KEY,
+    issueId TEXT NOT NULL,
+    configName TEXT NOT NULL,
+    configVersion TEXT NOT NULL,
+    extentions TEXT NOT NULL,
+    UNIQUE(issueId, configName, configVersion, extentions),
+    FOREIGN KEY(issueId) REFERENCES issue(issueId)
 );""")
 
 cur.execute("""create table if not exists report (
@@ -54,12 +62,12 @@ cur.execute("""create table if not exists report (
 );""")
 
 cur.execute("""create table if not exists smtpQueue (
-    reportStackId INTEGER PRIMARY KEY,
-    FOREIGN KEY(reportStackId) REFERENCES reportStack(stackId) ON DELETE CASCADE
+    issueId INTEGER PRIMARY KEY,
+    FOREIGN KEY(issueId) REFERENCES issue(issueId) ON DELETE CASCADE
 );""")
 
-cur.execute("CREATE INDEX IF NOT EXISTS report_stack_index ON report (reportStackId);")
-cur.execute("CREATE INDEX IF NOT EXISTS reportStack_stack_index ON reportStack (stackId);")
+cur.execute("CREATE INDEX IF NOT EXISTS report_reportstack_index ON report (reportStackId);")
+cur.execute("CREATE INDEX IF NOT EXISTS reportStack_issue_index ON reportStack (issueId);")
 conn.commit()
 
 uid = pwd.getpwnam(prefs.APACHE_USER).pw_uid
