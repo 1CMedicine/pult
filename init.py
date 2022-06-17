@@ -34,7 +34,7 @@ cur.execute("""create table if not exists issue (
 
 cur.execute("""create table if not exists reportStack (
     stackId INTEGER PRIMARY KEY,
-    issueId TEXT NOT NULL,
+    issueId INTEGER NOT NULL,
     configName TEXT NOT NULL,
     configVersion TEXT NOT NULL,
     extentions TEXT NOT NULL,

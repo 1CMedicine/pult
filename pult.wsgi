@@ -14,6 +14,7 @@ from email.mime.text import MIMEText
 from email.header import Header
 from threading import Thread
 import datetime
+import re
 
 local_path = os.path.split(__file__)[0]
 if local_path not in sys.path:
@@ -38,10 +39,8 @@ def read(environ):
     environ['wsgi.input'] = body
     return body
 
-def array2str(arrs, sql, q=True):
+def array2str(arrs, sql):
     start = True
-    if q:
-        print("'", sep='', end='', file=sql)
     print("[", sep='', end='', file=sql)
     for line in arrs:
         if start:
@@ -49,12 +48,10 @@ def array2str(arrs, sql, q=True):
         else:
             print(",", sep='', end='', file=sql)
         if type(line) == list:
-            array2str(line, sql, False)
+            array2str(line, sql)
         else:
-            print('&quot;', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '&quot;', sep='', end='', file=sql)
+            print('"', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '"', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
-    if q:
-        print("'", sep='', end='', file=sql)
 
 def prepareErrorTableLine(r, output, secret, issueN):
     print("<tr", sep='', end='', file=output)
@@ -64,7 +61,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
     if issueN == 0:
         print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
 
-    errors_json = json.loads(r[1].replace("&quot;", "\""))
+    errors_json = json.loads(r[1])
     try:
         errors_txt = json2html.convert(json=errors_json, escape=0)
     except ValueError:
@@ -80,6 +77,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
 
 # строит html таблицу с описанием ошибок или таблицу для одной ошибки с номером issueN
 # возвращает stackId последний строки. Используется только если issueN != 0, а значит stackId последней и единственной записи.
+# При построении таблицы выполняется группировка по номеру ошибки. Записи сортированные.
 def prepareErrorTable(cur, output, secret, issueN = 0):
     print("<table width='100%' border=1><tr>", sep='', file=output)
     if issueN == 0:
@@ -91,7 +89,7 @@ def prepareErrorTable(cur, output, secret, issueN = 0):
     for r in cur.fetchall():
         conf = r[3]+", "+r[4]
         if len(r[5]) > 2:
-            ext_json = json.loads(r[5].replace("&quot;", "\""))
+            ext_json = json.loads(r[5])
             try:
                 ext_txt = json2html.convert(json=ext_json)
             except ValueError:
@@ -133,7 +131,7 @@ def readReport(fzip_name, environ):
 def send_mail():
     conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
     cur = conn.cursor()
-    SQLPacket = "select reportStack.issueId, reportStack.configName from smtpQueue inner join reportStack on reportStack.issueId=smtpQueue.issueId"
+    SQLPacket = "select smtpQueue.issueId, reportStack.configName from smtpQueue inner join reportStack on reportStack.issueId=smtpQueue.issueId"
     cur.execute(SQLPacket)
     errors = {}
     for r in cur.fetchall():
@@ -162,7 +160,7 @@ def send_mail():
             s.sendmail(msg['From'], prefs.CONFIGS[configName][1], msg.as_string())
 
             cur = conn.cursor()
-            SQLPacket = "delete from smtpQueue where reportStackId in (" + ",".join(errors[configName]) + ")"
+            SQLPacket = "delete from smtpQueue where issueId in (" + ",".join(errors[configName]) + ")"
             cur.execute(SQLPacket)
             cur.close()
             conn.commit();
@@ -173,64 +171,43 @@ def send_mail():
 
 
 def insertReportStack(conn, report, issueId):
-    sql = StringIO()
-    print("insert into reportStack (issueId,configName,configVersion,extentions) values (", sep='', end='', file=sql)
-    print(issueId,",'", report['configInfo']['name'], sep='', end='', file=sql)
-    print("','", report['configInfo']['version'],"',", sep='', end='', file=sql)
-    if 'extentions' in report['configInfo']: 
-        array2str(report['configInfo']['extentions'], sql)
+    t = StringIO()
+    if 'extentions' in report['configInfo']:
+        array2str(report['configInfo']['extentions'], t)
     else:
-        print("''", file=sql)
+        print("", sep='', end='', file=t)
 
-    print(")", sep='', end='', file=sql)
+    i = (issueId, report['configInfo']['name'], report['configInfo']['version'], t.getvalue()) 
     cur = conn.cursor()
-    cur.execute(sql.getvalue())
-    sql.close()
+    cur.execute("insert into reportStack (issueId,configName,configVersion,extentions) values (?,?,?,?)", i)
 
-    sql = StringIO()
-    print("select stackId from reportStack where issueId=", issueId, " and ", sep='', end='', file=sql)
-    print("configName='",report['configInfo']['name'], "' and configVersion='",report['configInfo']['version'],"'", sep='', end='', file=sql)
-    if 'extentions' in report['configInfo']: 
-        print(" and extentions=", sep='', end='', file=sql)
-        array2str(report['configInfo']['extentions'], sql)
-    else:
-        print(" and extentions=''", sep='', end='', file=sql)
     cur = conn.cursor()
-    cur.execute(sql.getvalue())
+    cur.execute("select stackId from reportStack where issueId=? and configName=? and configVersion=?  and extentions=?", i)
     stackId = cur.fetchone()[0]
     cur.close()
-    sql.close()
     return stackId
 
 
 def insertReport(conn, report, stackId, fn, environ):
-    sql = StringIO()
-    print("insert into report values ('", report['time'],"','", sep='', end='', file=sql)
-    print(report['sessionInfo']['userName'] if 'userName' in report['sessionInfo'] else "","','", sep='', end='', file=sql)
-    print(report['clientInfo']['appVersion'],"','", sep='', end='', file=sql)
-    print(report['clientInfo']['platformType'],"','", sep='', end='', file=sql)
-    print(report['serverInfo']['type'],"','", sep='', end='', file=sql)
-    print(report['sessionInfo']['dataSeparation'],"','", sep='', end='', file=sql)
-    print(report['serverInfo']['dbms'],"','", sep='', end='', file=sql)
-    if 'systemInfo' in report['clientInfo']:
-        print(report['clientInfo']['systemInfo']['clientID'], sep='', end='', file=sql)
-    print("',", sep='', end='', file=sql)
-    print("1,'", sep='', end='', file=sql)
-    print(fn,"',", sep='', end='', file=sql)
-    print(1 if report['configInfo']['changeEnabled'] else 0,",", sep='', end='', file=sql)
-    print(stackId, ",", sep='', end='', file=sql)
-    if 'userDescription' in report['errorInfo']:
-        print("'<span class=\"descTime\">", report['time'], "</span>&nbsp;<span class=\"desc\">", report['errorInfo']['userDescription'], "</span>',", sep='', end='', file=sql)
-    else:
-        print("NULL,", sep='', end='', file=sql)
-    print("'", environ['REMOTE_ADDR'],"',", sep='', end='', file=sql)
-    print(1 if 'additionalFiles' in report else 0, sep='', end='', file=sql)
-    print(")", sep='', end='', file=sql)
+    i = (report['time'], 
+        report['sessionInfo']['userName'] if 'userName' in report['sessionInfo'] else "", 
+        report['clientInfo']['appVersion'], 
+        report['clientInfo']['platformType'], 
+        report['serverInfo']['type'], 
+        report['sessionInfo']['dataSeparation'], 
+        report['serverInfo']['dbms'],
+        report['clientInfo']['systemInfo']['clientID'] if 'systemInfo' in report['clientInfo'] else "",
+        1,
+        fn,
+        1 if report['configInfo']['changeEnabled'] else 0,
+        stackId,
+        "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] else "NULL",
+        environ['REMOTE_ADDR'],
+        1 if 'additionalFiles' in report else 0)
 
     cur = conn.cursor()
-    cur.execute(sql.getvalue())
+    cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
-    sql.close()
 
 
 def application(environ, start_response):
@@ -372,69 +349,53 @@ function selectConfig(configName) {
         cur = conn.cursor()
 
         prev_issue = None
-        sql = StringIO()
-        print("select rowid from issue where stackHash='", sep='', end='', file=sql)
-        print(report['errorInfo']['applicationErrorInfo']['stackHash'], "' and errors=", sep='', end='', file=sql)
-        array2str(report['errorInfo']['applicationErrorInfo']['errors'], sql)
+        te = StringIO()
+
+        # схлапываем те строки, которые размножают одну ошибку в отчетах
+        array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
+        errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
 
         cur = conn.cursor()
-        cur.execute(sql.getvalue())
+        cur.execute("select rowid from issue where stackHash=? and errors=?", (report['errorInfo']['applicationErrorInfo']['stackHash'], errors))
         issue = cur.fetchone()
         cur.close()
-        sql.close()
 
         fn = str(uuid.uuid4())+".zip"
+        needSendMail = False
         if issue is None:
-            sql = StringIO()
-            print("insert into issue (errors,stackHash) values (", sep='', end='', file=sql)
-            array2str(report['errorInfo']['applicationErrorInfo']['errors'], sql)
-            print(",'", report['errorInfo']['applicationErrorInfo']['stackHash'], "')", sep='', end='', file=sql)
             cur = conn.cursor()
-            cur.execute(sql.getvalue())
-            sql.close()
+            cur.execute("insert into issue (errors,stackHash) values (?,?)", (errors, report['errorInfo']['applicationErrorInfo']['stackHash']))
+            cur.close()
 
-            sql = StringIO()
-            print("select issueId from issue where errors=", sep='', end='', file=sql)
-            array2str(report['errorInfo']['applicationErrorInfo']['errors'], sql)
-            print(" and stackHash='", report['errorInfo']['applicationErrorInfo']['stackHash'], "'", sep='', end='', file=sql)
             cur = conn.cursor()
-            cur.execute(sql.getvalue())
+            cur.execute("select issueId from issue where errors=? and stackHash=?", (errors, report['errorInfo']['applicationErrorInfo']['stackHash']))
             issue = cur.fetchone()[0]
-            sql.close()
+            cur.close()
 
             stack = insertReportStack(conn, report, issue)
             insertReport(conn, report, stack, fn, environ)
 
             if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and report['configInfo']['name'] in prefs.CONFIGS and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
-                sql = StringIO()
-                print("insert into smtpQueue values (", issue, ")", sep='', end='', file=sql)
                 cur = conn.cursor()
-                cur.execute(sql.getvalue())
-                sql.close()
-                conn.commit()
-                Thread(target=send_mail, args=()).start()
+                cur.execute("insert into smtpQueue values (?)", (issue,))
+                needSendMail = True
+                cur.close()
         else:
             issue = issue[0]
 
             prev_reports = None
             if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report:
-                sql = StringIO()
-                print("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId ", sep='', end='', file=sql)
-                print(" where issueId=", issue, " and ", sep='', end='', file=sql)
-                print("clientID='", report['clientInfo']['systemInfo']['clientID'], "' and configName='", sep='', end='', file=sql)
-                print(report['configInfo']['name'], "' and configVersion='", sep='', end='', file=sql)
-                print(report['configInfo']['version'], "'", sep='', end='', file=sql)
+                t = StringIO()
                 if 'extentions' in report['configInfo']: 
-                    print(" and extentions=", sep='', end='', file=sql)
-                    array2str(report['configInfo']['extentions'], sql)
+                    array2str(report['configInfo']['extentions'], t)
                 else:
-                    print(" and extentions=''", sep='', end='', file=sql)
+                    print("", sep='', end='', file=t)
 
+                i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
                 cur = conn.cursor()
-                cur.execute(sql.getvalue())
+                cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
                 prev_reports = cur.fetchone()
                 cur.close()
-                sql.close()
 
                 if prev_reports is not None:
                     if prev_reports[2] is not None and 'userDescription' in report['errorInfo']:
@@ -451,21 +412,17 @@ function selectConfig(configName) {
                     cur.execute(SQLPacket)
                     cur.close()
             else:
-                sql = StringIO()
-                print("select stackId from reportStack where issueId=", issue, " and ", sep='', end='', file=sql)
-                print("configName='", report['configInfo']['name'], "' and configVersion='", sep='', end='', file=sql)
-                print(report['configInfo']['version'], "'", sep='', end='', file=sql)
+                t = StringIO()
                 if 'extentions' in report['configInfo']: 
-                    print(" and extentions=", sep='', end='', file=sql)
-                    array2str(report['configInfo']['extentions'], sql)
+                    array2str(report['configInfo']['extentions'], t)
                 else:
-                    print(" and extentions=''", sep='', end='', file=sql)
+                    print("", sep='', end='', file=t)
 
+                i = (issue, report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
                 cur = conn.cursor()
-                cur.execute(sql.getvalue())
+                cur.execute("select stackId from reportStack where issueId=? configName=? and configVersion=? and extentions=?", t)
                 stack = cur.fetchone()
                 cur.close()
-                sql.close()
                 if stack is not None:
                     stack = stack[0]
                 else:
@@ -473,7 +430,9 @@ function selectConfig(configName) {
 
                 insertReport(conn, report, stack, fn, environ)
 
-            conn.commit()
+        conn.commit()
+        if needSendMail:
+            Thread(target=send_mail, args=()).start()
 
         shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
         conn.close()
@@ -632,9 +591,9 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.issueId,configName,configVersion,extentions desc"
+            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.issueId desc,configName,configVersion,extentions"
         else:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId,configName,configVersion,extentions desc"
+            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc,configName,configVersion,extentions"
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
@@ -684,17 +643,30 @@ function selectConfig(configName) {
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
 <title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
+        print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span></h2>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
-
-        print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span></h2>", sep='', file=output)
 
         cur = conn.cursor()
         SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId="+url[2]
         cur.execute(SQLPacket)
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
+
+        if stackId is None:
+            output = StringIO()
+            print('''<!DOCTYPE html><html><head>
+<meta charset='utf-8'>
+<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
+<title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
+            print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span> Не найдена</h2>", sep='', file=output)
+            ret = output.getvalue().encode('UTF-8')
+            start_response('200 OK', [
+                ('Content-Type', 'text/html; charset=utf-8'),
+                ('Content-Length', str(len(ret)))
+            ])
+            return [ret]
 
         print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
@@ -722,12 +694,7 @@ function selectConfig(configName) {
 
 
         if not found:
-            output = StringIO()
-            print('''<!DOCTYPE html><html><head>
-<meta charset='utf-8'>
-<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
-<title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
-            print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span> Не найдена</h2>", sep='', file=output)
+            raise Exception("StackID='" + stackIs + "' but report not found")
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
 <p><a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
