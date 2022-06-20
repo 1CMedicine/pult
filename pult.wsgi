@@ -201,7 +201,7 @@ def insertReport(conn, report, stackId, fn, environ):
         fn,
         1 if report['configInfo']['changeEnabled'] else 0,
         stackId,
-        "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] else "NULL",
+        "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] else None,
         environ['REMOTE_ADDR'],
         1 if 'additionalFiles' in report else 0)
 
