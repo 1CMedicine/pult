@@ -142,6 +142,7 @@ def send_mail():
     cur.close()
 
     try:
+        s = None
         s = smtplib.SMTP(prefs.SMTP_HOST, prefs.SMTP_PORT, timeout=10)
         s.set_debuglevel(1)
         #s.starttls()
@@ -166,7 +167,8 @@ def send_mail():
             conn.commit();
             output.close()
     finally:
-        s.quit()
+        if s is not None:
+            s.quit()
         conn.close()
 
 
@@ -310,18 +312,40 @@ function selectConfig(configName) {
 
 
     if environ['PATH_INFO'] == '/getInfo':
-        length= int(environ.get('CONTENT_LENGTH', '0'))
-        body = environ['wsgi.input'].read(length).decode('utf-8')
-        query = json.loads(body)
-        output = StringIO()
         needSendReport = False
-        if 'test' in query:
-            needSendReport = True
-        elif query['configName'] in prefs.CONFIGS:
-            for ver in prefs.CONFIGS[query['configName']][0]:
-                if ver == query['configVersion'][:len(ver)]:
-                    needSendReport = True
+        blocked = False
+        addr = environ['REMOTE_ADDR']
+        for bl in prefs.BLACKLIST:
+            if addr[:len(bl)] == bl:
+                blocked = True
+                print("Address blocked by blacklist - ", addr, sep='', end='', file=environ['wsgi.errors'])
+                break
+        if not blocked and len(prefs.WHITELIST) > 0:
+            blocked = True
+            for wl in prefs.WHITELIST:
+                if addr[:len(wl)] == wl:
+                    blocked = False
                     break
+            if blocked:
+                print("Address blocked by whitelist - ", addr, sep='', end='', file=environ['wsgi.errors'])
+
+
+        if not blocked:
+            try:
+                length = int(environ.get('CONTENT_LENGTH', '0'))
+            except (ValueError):
+                length = 0
+            body = environ['wsgi.input'].read(length).decode('utf-8')
+            if len(body) > 1:
+                query = json.loads(body)
+                output = StringIO()
+                if 'test' in query:
+                    needSendReport = True
+                elif query['configName'] in prefs.CONFIGS:
+                    for ver in prefs.CONFIGS[query['configName']][0]:
+                        if ver == query['configVersion'][:len(ver)]:
+                            needSendReport = True
+                            break
 
         if needSendReport:
             ret = '{"needSendReport":true,"userMessage":"Рекомендуем сформировать и отправить отчет разработчикам 1С:Медицина. При необходимости получения обратной связи свяжитесь с линией консультации по адресу med@1c.ru"}'.encode('UTF-8')
@@ -344,98 +368,104 @@ function selectConfig(configName) {
         if not 'errors' in report['errorInfo']['applicationErrorInfo']:
             raise Exception("There is no information about errors")
 
-        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
-        conn.execute("PRAGMA foreign_keys=ON;")
-        cur = conn.cursor()
+        stackHash = ""
+        #  Если стека нет, то игнорируем отчет, так как нам интересны только ошибки модулей
+        if 'stackHash' in report['errorInfo']['applicationErrorInfo'] :
+            stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
-        prev_issue = None
-        te = StringIO()
-
-        # схлапываем те строки, которые размножают одну ошибку в отчетах
-        array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
-        errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
-
-        cur = conn.cursor()
-        cur.execute("select rowid from issue where stackHash=? and errors=?", (report['errorInfo']['applicationErrorInfo']['stackHash'], errors))
-        issue = cur.fetchone()
-        cur.close()
-
-        fn = str(uuid.uuid4())+".zip"
-        needSendMail = False
-        if issue is None:
+            conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+            conn.execute("PRAGMA foreign_keys=ON;")
             cur = conn.cursor()
-            cur.execute("insert into issue (errors,stackHash) values (?,?)", (errors, report['errorInfo']['applicationErrorInfo']['stackHash']))
-            cur.close()
+
+            prev_issue = None
+            te = StringIO()
+
+            # схлапываем те строки, которые размножают одну ошибку в отчетах
+            array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
+            errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
 
             cur = conn.cursor()
-            cur.execute("select issueId from issue where errors=? and stackHash=?", (errors, report['errorInfo']['applicationErrorInfo']['stackHash']))
-            issue = cur.fetchone()[0]
+            cur.execute("select rowid from issue where stackHash=? and errors=?", (stackHash, errors))
+            issue = cur.fetchone()
             cur.close()
 
-            stack = insertReportStack(conn, report, issue)
-            insertReport(conn, report, stack, fn, environ)
-
-            if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and report['configInfo']['name'] in prefs.CONFIGS and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+            fn = str(uuid.uuid4())+".zip"
+            needSendMail = False
+            if issue is None:
                 cur = conn.cursor()
-                cur.execute("insert into smtpQueue values (?)", (issue,))
-                needSendMail = True
-                cur.close()
-        else:
-            issue = issue[0]
-
-            prev_reports = None
-            if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report:
-                t = StringIO()
-                if 'extentions' in report['configInfo']: 
-                    array2str(report['configInfo']['extentions'], t)
-                else:
-                    print("", sep='', end='', file=t)
-
-                i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
-                cur = conn.cursor()
-                cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
-                prev_reports = cur.fetchone()
+                cur.execute("insert into issue (stackHash, errors) values (?,?)", (stackHash, errors))
                 cur.close()
 
-                if prev_reports is not None:
-                    if prev_reports[2] is not None and 'userDescription' in report['errorInfo']:
-                        SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                        SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
-                    elif prev_reports[2] is None and 'userDescription' in report['errorInfo']:
-                        SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                        SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
-                    else:
-                        SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']
-                    SQLPacket += "' where rowid="+str(prev_reports[0])
-
-                    cur = conn.cursor()
-                    cur.execute(SQLPacket)
-                    cur.close()
-            else:
-                t = StringIO()
-                if 'extentions' in report['configInfo']: 
-                    array2str(report['configInfo']['extentions'], t)
-                else:
-                    print("", sep='', end='', file=t)
-
-                i = (issue, report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
                 cur = conn.cursor()
-                cur.execute("select stackId from reportStack where issueId=? configName=? and configVersion=? and extentions=?", t)
-                stack = cur.fetchone()
+                cur.execute("select issueId from issue where stackHash=? and errors=?", (stackHash, errors))
+                issue = cur.fetchone()[0]
                 cur.close()
-                if stack is not None:
-                    stack = stack[0]
-                else:
-                    stack = insertReportStack(conn, report, issue)
 
+                stack = insertReportStack(conn, report, issue)
                 insertReport(conn, report, stack, fn, environ)
 
-        conn.commit()
-        if needSendMail:
-            Thread(target=send_mail, args=()).start()
+                if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and report['configInfo']['name'] in prefs.CONFIGS and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                    cur = conn.cursor()
+                    cur.execute("insert into smtpQueue values (?)", (issue,))
+                    needSendMail = True
+                    cur.close()
+            else:
+                issue = issue[0]
 
-        shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
-        conn.close()
+                prev_reports = None
+                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report:
+                    t = StringIO()
+                    if 'extentions' in report['configInfo']: 
+                        array2str(report['configInfo']['extentions'], t)
+                    else:
+                        print("", sep='', end='', file=t)
+
+                    i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
+                    cur = conn.cursor()
+                    cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                    prev_reports = cur.fetchone()
+                    cur.close()
+
+                    if prev_reports is not None:
+                        if prev_reports[2] is not None and 'userDescription' in report['errorInfo']:
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
+                        elif prev_reports[2] is None and 'userDescription' in report['errorInfo']:
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                            SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
+                        else:
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']
+                        SQLPacket += "' where rowid="+str(prev_reports[0])
+
+                        cur = conn.cursor()
+                        cur.execute(SQLPacket)
+                        cur.close()
+                else:
+                    t = StringIO()
+                    if 'extentions' in report['configInfo']: 
+                        array2str(report['configInfo']['extentions'], t)
+                    else:
+                        print("", sep='', end='', file=t)
+
+                    i = (issue, report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
+                    cur = conn.cursor()
+                    cur.execute("select stackId from reportStack where issueId=? configName=? and configVersion=? and extentions=?", t)
+                    stack = cur.fetchone()
+                    cur.close()
+                    if stack is not None:
+                        stack = stack[0]
+                    else:
+                        stack = insertReportStack(conn, report, issue)
+
+                    insertReport(conn, report, stack, fn, environ)
+
+            conn.commit()
+            conn.close()
+            if needSendMail:
+                Thread(target=send_mail, args=()).start()
+
+            shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
+
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
             ('Content-Length', '0')
@@ -456,14 +486,14 @@ function selectConfig(configName) {
 Пустая строка в версия - принимаются любые версии. Неполное задание версии допускатся.</li>
 <li class='refli'>2-й список - список email, которым будет отправлено сообщение о регистрации новой ошибки.</li></ul>
 <p>Отчет считается новой ошибкой, если образуется уникальная комбинация из следующих данных из отчета:</p>
-<ul><li class='refli'>Наименование конфигурации</li>
-<li class='refli'>Версия конфигурации</li>
-<li class='refli'>Установленные расширения</li>
+<ul>
 <li class='refli'>Текст ошибки</li>
 <li class='refli'>Хеш стека ошибки конфигурации</li></ul>
-<p>Если список пустой, то почта для этой конфигурации не отправляется.</p>''', sep='', file=output)
+<p>Если список email пустой, то почта для этой конфигурации не отправляется.</p>''', sep='', file=output)
 
         print("<hr>Для изменения настроек необходимо изменить значения соответствующих переменных в файле prefs.py. После чего перестартовать апач.", sep='', file=output)
+        print("<hr><p>Черный список IP-адресов</p>", prefs.BLACKLIST, sep='', file=output)
+        print("<p>Белый список IP-адресов</p>", prefs.WHITELIST, sep='', file=output)
         print("<hr><h3>Перейти:</h3>", sep='', file=output)
         print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></lu>", sep='', file=output)
         print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций</a></li>", sep='', file=output)
