@@ -498,7 +498,7 @@ function selectConfig(configName) {
         print("<p>Белый список IP-адресов</p>", prefs.WHITELIST, sep='', file=output)
         print("<hr><h3>Перейти:</h3>", sep='', file=output)
         print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></lu>", sep='', file=output)
-        print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций</a></li>", sep='', file=output)
+        print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</a></li>", sep='', file=output)
         print("</ul></body></html>", sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -514,8 +514,8 @@ function selectConfig(configName) {
         print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
         print("<meta charset='utf-8'>", sep='', file=output)
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
-        print("<title>Удаление отчетов неподдерживаемых версий и конфигураций</title>", sep='', file=output)
-        print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций</h2>", sep='', file=output)
+        print("<title>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</title>", sep='', file=output)
+        print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка. Ошибки с комментариями не удаляются.</h2>", sep='', file=output)
         print("<p>Поддерживаемые конфигурации - ", json2html.convert(json=prefs.CONFIGS, table_attributes="border=1 class='settings_table'"), "</p>", sep='', file=output)
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
 
@@ -527,9 +527,11 @@ function selectConfig(configName) {
         cur.execute("select count(*) from issue")
         totalErrorsCount = cur.fetchone()[0]
         cur.close()
-        stackIds = []
+
+        stackIds = set()
         issueIds = set()
         errorsCount = 0
+        reportsCount = 0
         for name in prefs.CONFIGS:
             sql = StringIO()
             print("select issueId, stackId from reportStack where configName='", name,"'", sep='', end='', file=sql)
@@ -538,45 +540,72 @@ function selectConfig(configName) {
             cur = conn.cursor()
             cur.execute(sql.getvalue())
 
-            start = True
             for r in cur.fetchall():
                 issueIds.add(str(r[0]))
-                stackIds.append(str(r[1]))
+                stackIds.add(str(r[1]))
             cur.close()
             sql.close()
 
-        sql = StringIO()
-        stackIds_str= ",".join(stackIds)
-        print("select file from report where reportStackId not in (", stackIds_str, ")", sep='', end='', file=sql)
+        # удаляем по блеклисту, не трогаем ошибки с комментариями
+        if len(prefs.BLACKLIST) > 0:
+            sql = StringIO()
+            cur = conn.cursor()
+            print("select reportStackId, file, issue.issueId from report innert join reportStack on reportStack.stackId=reportStackId inner join issue on issue.issueId=reportStack.issueId where issue.marked='' and (", sep='', end='', file=sql)
+            start = True
+            for ip in prefs.BLACKLIST:
+                if start:
+                    start = False
+                else:
+                    print(" or ", sep='', end='', file=sql)
+                print("REMOTE_ADDR like '", ip,"%'", sep='', end='', file=sql)
+            print(")", sep='', end='', file=sql)
+            cur = conn.cursor()
+            cur.execute(sql.getvalue())
+            print(sql.getvalue(), file=environ["wsgi.errors"])
+            for r in cur.fetchall():
+                if str(r[0]) in stackIds:
+                    stackIds.remove(str(r[0]))
+                if str(r[2]) in issueIds:
+                    issueIds.remove(str(r[2]))
+                if os.path.exists(prefs.DATA_PATH+"/"+r[1]):
+                    os.remove(prefs.DATA_PATH+"/"+r[1])
+                    reportsCount += 1
+            cur.close()
+            sql.close()
+
         cur = conn.cursor()
-        cur.execute(sql.getvalue())
-        reportsCount = 0
+        cur.execute("select file from report where reportStackId not in ("+",".join(stackIds)+")")
         for r in cur.fetchall():
-            os.remove(prefs.DATA_PATH+"/"+r[0])
-            reportsCount += 1
+            if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
+                os.remove(prefs.DATA_PATH+"/"+r[0])
+                reportsCount += 1
         cur.close()
-        sql.close()
 
-        sql = StringIO()
-        print("delete from report where reportStackId not in (", stackIds_str, ")", sep='', end='', file=sql)
         cur = conn.cursor()
-        cur.execute(sql.getvalue())
+        cur.execute("delete from report where reportStackId not in ("+",".join(stackIds)+")")
         cur.close()
-        sql.close()
 
-        sql = StringIO()
-        print("delete from reportStack where stackId not in (", stackIds_str, ")", sep='', end='', file=sql)
         cur = conn.cursor()
-        cur.execute(sql.getvalue())
+        cur.execute("delete from reportStack where stackId not in ("+",".join(stackIds)+")")
         cur.close()
-        sql.close()
 
-        sql = StringIO()
-        print("delete from issue where issueId not in (", ",".join(issueIds), ")", sep='', end='', file=sql)
+        # получить список стеков на которые ссылаются удаляемые репорты, но при этом есть ссылки на неудаляемые
         cur = conn.cursor()
-        cur.execute(sql.getvalue())
+        cur.execute("select reportStack.stackId from reportStack inner join report on reportStack.stackId=report.reportStackId where report.reportStackId not in (" + ",".join(stackIds) + ")")
+        for r in cur.fetchall():
+            stackIds.add(str(r[0]))
         cur.close()
-        sql.close()
+
+        # получить список ошибок на которые ссылаются удаляемые репорты, но при этом есть ссылки на неудаляемые
+        cur = conn.cursor()
+        cur.execute("select issue.issueId from issue inner join reportStack on issue.issueId=reportStack.issueId where issue.issueId not in (" + ",".join(issueIds) + ")")
+        for r in cur.fetchall():
+            issueIds.add(str(r[0]))
+        cur.close()
+
+        cur = conn.cursor()
+        cur.execute("delete from issue where issueId not in (" + ",".join(issueIds) + ")")
+        cur.close()
 
         conn.commit()
         conn.close()
