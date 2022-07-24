@@ -216,7 +216,7 @@ def insertReport(conn, report, stackId, fn, environ):
         stackId,
         "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] else None,
         environ['REMOTE_ADDR'],
-        1 if 'additionalFiles' in report else 0)
+        1 if 'additionalFiles' in report or 'screenshot' in report or 'additionalData' in report else 0)
 
     cur = conn.cursor()
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
@@ -426,7 +426,7 @@ function selectConfig(configName) {
                 issue = issue[0]
 
                 prev_reports = None
-                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report:
+                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report and 'screenshot' not in report:
                     t = StringIO()
                     if 'extentions' in report['configInfo']: 
                         array2str(report['configInfo']['extentions'], t)
@@ -515,13 +515,11 @@ function selectConfig(configName) {
         print("<meta charset='utf-8'>", sep='', file=output)
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
         print("<title>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</title>", sep='', file=output)
-        print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка. Ошибки с комментариями не удаляются.</h2>", sep='', file=output)
-        print("<p>Поддерживаемые конфигурации - ", json2html.convert(json=prefs.CONFIGS, table_attributes="border=1 class='settings_table'"), "</p>", sep='', file=output)
+        print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка. <br>Ошибки с комментариями не удаляются.</h2>", sep='', file=output)
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
-        cur = conn.cursor()
 
         cur = conn.cursor()
         cur.execute("select count(*) from issue")
@@ -561,7 +559,6 @@ function selectConfig(configName) {
             print(")", sep='', end='', file=sql)
             cur = conn.cursor()
             cur.execute(sql.getvalue())
-            print(sql.getvalue(), file=environ["wsgi.errors"])
             for r in cur.fetchall():
                 if str(r[0]) in stackIds:
                     stackIds.remove(str(r[0]))
@@ -746,7 +743,7 @@ function selectConfig(configName) {
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл(ы)' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скриншот' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
             found = True
 
         cur.close()
