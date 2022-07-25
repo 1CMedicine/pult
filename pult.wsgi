@@ -69,9 +69,9 @@ def prepareErrorTableLine(r, output, secret, issueN):
 
     print("<td>",errors_txt,"Хеш стека: ",r[2],"</td><td>","<br>".join(r[3]),"</td>", sep='', end='', file=output)
     if secret:
-        print("<td align='center'><input type='text' size='6' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
     else:
-        print("<td align='center'><input type='text' size='6' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
     print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
     print("</td></tr>", sep='', file=output)
 
@@ -373,15 +373,9 @@ function selectConfig(configName) {
         fzip = read(environ)
         report = readReport(fzip.name, environ)
 
-        if not 'configInfo' in report:
-            raise Exception("There is no information about configuration")
-
-        if not 'errors' in report['errorInfo']['applicationErrorInfo']:
-            raise Exception("There is no information about errors")
-
         stackHash = ""
-        #  Если стека нет, то игнорируем отчет, так как нам интересны только ошибки модулей
-        if 'stackHash' in report['errorInfo']['applicationErrorInfo'] :
+        #  Если нет стека, ошибки или информации и конфе, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
+        if 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
