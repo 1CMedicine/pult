@@ -66,7 +66,7 @@
 2) Скопировать файлы pult.wsgi, prefs.py, init.py в папку /var/www/wsgi/pult.
 3) Внести настройки экземпляра сервиса в prefs.py
 4) Запустить init.py
-5) Зарегистрировать приложение WSGI
+5) Зарегистрировать приложение WSGI в apache2.conf
 ```
 	WSGIScriptAlias /wsgi/pult /var/www/wsgi/pult/pult.wsgi
 ```
