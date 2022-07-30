@@ -214,9 +214,9 @@ def insertReport(conn, report, stackId, fn, environ):
         fn,
         1 if report['configInfo']['changeEnabled'] else 0,
         stackId,
-        "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] else None,
+        "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '' else None,
         environ['REMOTE_ADDR'],
-        1 if 'additionalFiles' in report or 'screenshot' in report or 'additionalData' in report else 0)
+        1 if 'additionalFiles' in report or ('screenshot' in report and report['screenshot'] is not None) or 'additionalData' in report else 0)
 
     cur = conn.cursor()
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
