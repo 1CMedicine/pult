@@ -50,7 +50,7 @@ def array2str(arrs, sql):
         if type(line) == list:
             array2str(line, sql)
         else:
-            print('"', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;"), '"', sep='', end='', file=sql)
+            print('"', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
 
 def prepareErrorTableLine(r, output, secret, issueN):
@@ -61,11 +61,12 @@ def prepareErrorTableLine(r, output, secret, issueN):
     if issueN == 0:
         print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
 
-    errors_json = json.loads(r[1])
+    errors_txt = r[1]+"<br><br>"
     try:
+        errors_json = json.loads(r[1])
         errors_txt = json2html.convert(json=errors_json, escape=0)
-    except ValueError:
-        erros_txt = str(errors_json)
+    except:
+        erros_txt = r[1]
 
     print("<td>",errors_txt,"Хеш стека: ",r[2],"</td><td>","<br>".join(r[3]),"</td>", sep='', end='', file=output)
     if secret:
