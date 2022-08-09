@@ -71,6 +71,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
     print("<td>",errors_txt,"Хеш стека: ",r[2],"</td><td>","<br>".join(r[3]),"</td>", sep='', end='', file=output)
     if secret:
         print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "'>удалить</a></small>", sep='', file=output)
     else:
         print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
     print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
@@ -242,6 +243,15 @@ def inStopLists(environ):
     return blocked
 
 
+def errorInConf(errors, environ):
+    if isinstance(errors[0][0], str):
+        e = errors[0][0]
+        if e.startwith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
+            return False
+    else:
+        print("Wrong type in errors array", file=environ["wsgi.errors"])
+    return True
+
 def application(environ, start_response):
     if environ['PATH_INFO'] == '/style.css':
         style=b'''H2 {
@@ -376,8 +386,10 @@ function selectConfig(configName) {
         report = readReport(fzip.name, environ)
 
         stackHash = ""
-        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
-        if not inStopLists(environ) and 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report:
+        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешнх объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
+        if not inStopLists(environ) and 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report and \
+                errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ):
+
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
@@ -604,6 +616,7 @@ function selectConfig(configName) {
         conn.close()
 
         print("<H3>Удалено ошибок: ", totalErrorsCount-len(issueIds), ", отчетов: ", reportsCount, "</H3>", sep='', file=output)
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
         print("</body></html>", sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -618,6 +631,61 @@ function selectConfig(configName) {
     secret = True if url[1] == 's' else False
     if secret:          # все нижелащие url могут находится в зоне с ограниченным доступом, префикс может быть равен 's'
         s = url.pop(0)
+
+    if secret and len(url) == 3 and url[1] == 'delete' and url[2].isdigit():
+        output = StringIO()
+        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
+        print("<meta charset='utf-8'>", sep='', file=output)
+        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
+        print("<title>Удаление ошибки</title>", sep='', file=output)
+        print("</head><body><h2>Удаление ошибки ", url[2], "</h2>", sep='', file=output)
+
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=ON;")
+
+        stackIds = set()
+        issueId = int(url[2])
+        reportsCount = 0
+
+        cur = conn.cursor()
+        cur.execute("select stackId from reportStack where issueId=?", (issueId,))
+        for r in cur.fetchall():
+            stackIds.add(str(r[0]))
+        cur.close()
+
+        cur = conn.cursor()
+        cur.execute("select file from report where reportStackId in ("+",".join(stackIds)+")")
+        for r in cur.fetchall():
+            if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
+                os.remove(prefs.DATA_PATH+"/"+r[0])
+                reportsCount += 1
+        cur.close()
+
+        cur = conn.cursor()
+        cur.execute("delete from report where reportStackId in ("+",".join(stackIds)+")")
+        cur.close()
+
+        cur = conn.cursor()
+        cur.execute("delete from reportStack where issueId=?", (issueId,))
+        cur.close()
+
+        cur = conn.cursor()
+        cur.execute("delete from issue where issueId=?", (issueId,))
+        cur.close()
+
+        conn.commit()
+        conn.close()
+
+        print("<H3>Удалено отчетов: ", reportsCount, "</H3>", sep='', file=output)
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
+        print("</body></html>", sep='', end='', file=output)
+
+        ret = output.getvalue().encode('UTF-8')
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(ret)))
+        ])
+        return [ret]
 
     if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
         output = StringIO()
@@ -762,7 +830,8 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if len(url) == 3 and url[1] == 'report':    # отчет в открытой и закрытой зонах
+    if len(url) == 3 and url[1] == 'report' and os.path.exists(prefs.DATA_PATH+"/"+url[2]):
+       # отчет в открытой и закрытой зонах
         status = '200 OK'
         response_headers = [('Content-type', 'application/zip')]
         start_response(status, response_headers)
