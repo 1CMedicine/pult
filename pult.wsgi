@@ -223,6 +223,24 @@ def insertReport(conn, report, stackId, fn, environ):
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
 
+def inStopLists(environ):
+    blocked = False
+    addr = environ['REMOTE_ADDR']
+    for bl in prefs.BLACKLIST:
+        if addr[:len(bl)] == bl:
+            blocked = True
+            print("Address blocked by blacklist - ", addr, sep='', end='', file=environ['wsgi.errors'])
+            break
+    if not blocked and len(prefs.WHITELIST) > 0:
+        blocked = True
+        for wl in prefs.WHITELIST:
+            if addr[:len(wl)] == wl:
+                blocked = False
+                break
+        if blocked:
+            print("Address blocked by whitelist - ", addr, sep='', end='', file=environ['wsgi.errors'])
+    return blocked
+
 
 def application(environ, start_response):
     if environ['PATH_INFO'] == '/style.css':
@@ -325,24 +343,7 @@ function selectConfig(configName) {
 
     if environ['PATH_INFO'] == '/getInfo':
         needSendReport = False
-        blocked = False
-        addr = environ['REMOTE_ADDR']
-        for bl in prefs.BLACKLIST:
-            if addr[:len(bl)] == bl:
-                blocked = True
-                print("Address blocked by blacklist - ", addr, sep='', end='', file=environ['wsgi.errors'])
-                break
-        if not blocked and len(prefs.WHITELIST) > 0:
-            blocked = True
-            for wl in prefs.WHITELIST:
-                if addr[:len(wl)] == wl:
-                    blocked = False
-                    break
-            if blocked:
-                print("Address blocked by whitelist - ", addr, sep='', end='', file=environ['wsgi.errors'])
-
-
-        if not blocked:
+        if not inStopLists(environ):
             try:
                 length = int(environ.get('CONTENT_LENGTH', '0'))
             except (ValueError):
@@ -375,8 +376,8 @@ function selectConfig(configName) {
         report = readReport(fzip.name, environ)
 
         stackHash = ""
-        #  Если нет стека, ошибки или информации и конфе, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
-        if 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report:
+        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
+        if not inStopLists(environ) and 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
@@ -433,10 +434,10 @@ function selectConfig(configName) {
                     cur.close()
 
                     if prev_reports is not None:
-                        if prev_reports[2] is not None and 'userDescription' in report['errorInfo']:
+                        if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
                             SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
-                        elif prev_reports[2] is None and 'userDescription' in report['errorInfo']:
+                        elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
                             SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
                         else:
