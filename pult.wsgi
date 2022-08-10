@@ -246,7 +246,7 @@ def inStopLists(environ):
 def errorInConf(errors, environ):
     if isinstance(errors[0][0], str):
         e = errors[0][0]
-        if e.startwith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
+        if e.startswith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
             return False
     else:
         print("Wrong type in errors array", file=environ["wsgi.errors"])
@@ -387,9 +387,12 @@ function selectConfig(configName) {
 
         stackHash = ""
         #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешнх объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
-        if not inStopLists(environ) and 'stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report and \
-                errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ):
-
+        full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
+        in_stop = inStopLists(environ)
+        in_conf = None
+        if full_data:
+            in_conf = errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+        if full_data and not in_stop and in_conf:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
@@ -476,6 +479,12 @@ function selectConfig(configName) {
             if needStoreReport:
                 shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
 
+        else:
+            t = StringIO()
+            if not full_data:
+                print("(stackHash-", 'stackHash' in report['errorInfo']['applicationErrorInfo'], ", errors-", 'errors' in report['errorInfo']['applicationErrorInfo'], ", configInfo-", 'configInfo' in report, ")", sep="", end="", file=t)
+            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), "in_conf - ", in_conf, sep='', end='', file=environ["wsgi.errors"])
+
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
             ('Content-Length', '0')
@@ -524,7 +533,6 @@ function selectConfig(configName) {
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
         print("<title>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</title>", sep='', file=output)
         print("</head><body><h2>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка. <br>Ошибки с комментариями не удаляются.</h2>", sep='', file=output)
-        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
@@ -800,7 +808,7 @@ function selectConfig(configName) {
 <th>dataSeparation</th>
 <th>СУБД</th>
 <th>changeEnabled</th>
-<th>Описание пользователя</th>
+    <th>Описание пользователя</th>
 <th>Число отчетов</th></tr>''', sep='', file=output)
         cur = conn.cursor()
         SQLPacket = "select * from report where reportStackId in ("+','.join(stackId)+") order by rowid desc"
