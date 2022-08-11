@@ -391,7 +391,7 @@ function selectConfig(configName) {
         in_stop = inStopLists(environ)
         in_conf = None
         if full_data:
-            in_conf = errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+            in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ)
         if full_data and not in_stop and in_conf:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
@@ -483,7 +483,7 @@ function selectConfig(configName) {
             t = StringIO()
             if not full_data:
                 print("(stackHash-", 'stackHash' in report['errorInfo']['applicationErrorInfo'], ", errors-", 'errors' in report['errorInfo']['applicationErrorInfo'], ", configInfo-", 'configInfo' in report, ")", sep="", end="", file=t)
-            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), "in_conf - ", in_conf, sep='', end='', file=environ["wsgi.errors"])
+            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), ", in_conf - ", in_conf, sep='', end='', file=environ["wsgi.errors"])
 
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
@@ -779,8 +779,8 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
 
         cur = conn.cursor()
-        SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId="+url[2]
-        cur.execute(SQLPacket)
+        SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId=?"
+        cur.execute(SQLPacket, (url[2],))
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
 
@@ -811,7 +811,7 @@ function selectConfig(configName) {
     <th>Описание пользователя</th>
 <th>Число отчетов</th></tr>''', sep='', file=output)
         cur = conn.cursor()
-        SQLPacket = "select * from report where reportStackId in ("+','.join(stackId)+") order by rowid desc"
+        SQLPacket = "select * from report where reportStackId in ("+','.join(stackId)+") order by time desc"
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
