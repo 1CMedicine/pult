@@ -71,7 +71,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
     print("<td>",errors_txt,"Хеш стека: ",r[2],"</td><td>","<br>".join(r[3]),"</td>", sep='', end='', file=output)
     if secret:
         print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
-        print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "'>удалить</a></small>", sep='', file=output)
+        print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "' ",'''onclick='return confirm("Вы уверены?")'>удалить</a></small>''', sep='', file=output)
     else:
         print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
     print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
@@ -243,13 +243,21 @@ def inStopLists(environ):
     return blocked
 
 
-def errorInConf(errors, environ):
+def errorInConf(errors, stack, environ):
     if isinstance(errors[0][0], str):
         e = errors[0][0]
         if e.startswith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
             return False
     else:
         print("Wrong type in errors array", file=environ["wsgi.errors"])
+
+    if isinstance(stack[0][0], str):
+        s = stack[0][0]
+        if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
+            return False
+    else:
+        print("Wrong type in stack array", file=environ["wsgi.errors"])
+
     return True
 
 def application(environ, start_response):
@@ -341,7 +349,8 @@ function selectConfig(configName) {
         document.location.href="''', prefs.SITE_URL, '''/s/errorsList/"+configName.substring(1)
     else
         document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
-}''', sep='', file=output)
+}
+''', sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
         start_response('200 OK', [
@@ -385,13 +394,12 @@ function selectConfig(configName) {
         fzip = read(environ)
         report = readReport(fzip.name, environ)
 
-        stackHash = ""
         #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешнх объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
         full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
         in_stop = inStopLists(environ)
         in_conf = None
         if full_data:
-            in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+            in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], report['errorInfo']['applicationErrorInfo']['stack'], environ)
         if full_data and not in_stop and in_conf:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
@@ -784,20 +792,6 @@ function selectConfig(configName) {
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
 
-        if stackId is None:
-            output = StringIO()
-            print('''<!DOCTYPE html><html><head>
-<meta charset='utf-8'>
-<link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
-<title>Список отчетов сервиса регистрации ошибок 1С:Медицина</title>''', sep='', end='', file=output)
-            print("</head><body><h2>Ошибка <span class='errorId'>", url[2], "</span> Не найдена</h2>", sep='', file=output)
-            ret = output.getvalue().encode('UTF-8')
-            start_response('200 OK', [
-                ('Content-Type', 'text/html; charset=utf-8'),
-                ('Content-Length', str(len(ret)))
-            ])
-            return [ret]
-
         print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
 <th>Пользователь 1С</th>
@@ -821,10 +815,6 @@ function selectConfig(configName) {
         cur.close()
         conn.close()
         print("</table>", sep='', file=output)
-
-
-        if not found:
-            raise Exception("StackID='" + stackIs + "' but report not found")
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
 <p><a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
