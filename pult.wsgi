@@ -26,6 +26,7 @@ CONFIG_NAMES = []
 for name in prefs.CONFIGS:
     CONFIG_NAMES.append(name)
 
+
 def read(environ):
     length = int(environ.get('CONTENT_LENGTH', 0))
     stream = environ['wsgi.input']
@@ -38,6 +39,7 @@ def read(environ):
     body.seek(0)
     environ['wsgi.input'] = body
     return body
+
 
 def array2str(arrs, sql):
     start = True
@@ -53,13 +55,14 @@ def array2str(arrs, sql):
             print('"', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
 
+
 def prepareErrorTableLine(r, output, secret, issueN):
     print("<tr", sep='', end='', file=output)
     if len(r[6]) != 0:
         print(" class='marked'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
-        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', end='', file=output)
+        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', file=output)
 
     errors_txt = r[1]+"<br><br>"
     try:
@@ -68,7 +71,8 @@ def prepareErrorTableLine(r, output, secret, issueN):
     except:
         erros_txt = r[1]
 
-    print("<td>",errors_txt,"Хеш стека: ",r[2],"</td><td>","<br>".join(r[3]),"</td>", sep='', end='', file=output)
+    print("<td style='word-wrap: break-word'>",errors_txt,"Хеш стека: ",r[2],"</td>",  file=output)
+    print("<td style='word-wrap: break-word;vertical-align: top;'>","<br>".join(r[3]),"</td>", sep='',  file=output)
     if secret:
         print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "' ",'''onclick='return confirm("Вы уверены?")'>удалить</a></small>''', sep='', file=output)
@@ -77,28 +81,31 @@ def prepareErrorTableLine(r, output, secret, issueN):
     print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
     print("</td></tr>", sep='', file=output)
 
+
 # строит html таблицу с описанием ошибок или таблицу для одной ошибки с номером issueN
 # возвращает список stackId, присутствующих в выборке. Используется только если issueN != 0, а значит stackId последней и единственной записи.
 # При построении таблицы выполняется группировка по номеру ошибки. Записи сортированные.
 def prepareErrorTable(cur, output, secret, issueN = 0):
-    print("<table width='100%' border=1><tr>", sep='', file=output)
+    print("<table style='width: 100%; table-layout : fixed;' border=1><tr>", sep='', file=output)
     if issueN == 0:
-        print("<th>N ошибки</th>", sep='', end='', file=output)
-    print("<th>Ошибки, errors</th><th>Конфигурация, версия и расширения</th><th>Метка</th></tr>", sep='', file=output)
+        print("<th style='width: 3%'>N</th>", sep='', end='', file=output)
+    print("<th style='width: 60%'>Ошибки, errors</th><th style='width: 30%'>Конфигурация, версия и расширения</th><th style='width: 7%'>Метка</th></tr>", sep='', file=output)
     pr = None
     prev_issueN = 0
     r = None
     stackId = []
     for r in cur.fetchall():
         conf = r[3]+", "+r[4]
-        stackId.append(str(r[9]))
+        id = str(r[9])
+        stackId.append(id)
         if len(r[5]) > 2:
             ext_json = json.loads(r[5])
             try:
                 ext_txt = json2html.convert(json=ext_json)
             except ValueError:
                 ext_txt = str(ext_json)
-            conf += ", "+ext_txt
+            conf += '<input type="checkbox" id="hd-'+id+'" class="reference"/><label for="hd-'+id+'" > Раскрыть '+str(len(ext_json))+' расширений'+'</label>'
+            conf += "<span class='story'>"+ext_txt+"</span>"
 
         if prev_issueN != r[0]:
             if pr is not None:
@@ -131,6 +138,7 @@ def readReport(fzip_name, environ):
     tdir.cleanup()
 
     return report
+
 
 def send_mail():
     conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
@@ -224,6 +232,7 @@ def insertReport(conn, report, stackId, fn, environ):
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
 
+
 def inStopLists(environ):
     blocked = False
     addr = environ['REMOTE_ADDR']
@@ -243,26 +252,68 @@ def inStopLists(environ):
     return blocked
 
 
+def platformError(errors, environ):
+    if isinstance(errors[-1][0], str):
+        if errors[-1][0].startswith('При работе формы произошла системная ошибка'):
+            return True
+    else:
+        print("Wrong type in errors array:", str(errors), file=environ["wsgi.errors"])
+
+    if isinstance(errors[-1][1][0], str):        # ошибка обмена по сети
+        if errors[-1][1][0] == "NetworkError":
+            return True
+    else:
+        print("2.Wrong type in errors array:", str(errors), file=environ["wsgi.errors"])
+    return False
+
+
 def errorInConf(errors, stack, environ):
     if isinstance(errors[0][0], str):
         e = errors[0][0]
         if e.startswith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
             return False
+
+        #Ошибка в расширении
+        dot = e.find('.')
+        if dot != -1:
+            space = e.find(' ', 2, dot)
+            if space != -1 and not e.startswith('{E'):    # расширение, но не патч
+                return False
+
+            dot2 = s.find('.', dot)
+            if dot2 != -1:
+                if e.find('_', dot, dot2) != -1:    # в имени объекта метаданных есть подчеркиавание, значит объект нетиповой
+                    return Fasle
     else:
         print("Wrong type in errors array", file=environ["wsgi.errors"])
 
+    # Вызов из объекта пользователя
     if isinstance(stack[0][0], str):
         s = stack[0][0]
         if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
             return False
+
+        for s1 in stack:
+            s = s1[0]
+            dot = s.find('.')
+            if dot != -1:
+                space = s.find(' ', 1, dot)
+                if space != -1 and not s.startswith('E'):   #расширение, но не патч
+                    return False
+
+                dot2 = s.find('.', dot)
+                if dot2 != -1:
+                    if s.find('_', dot, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
+                        return False
     else:
-        print("Wrong type in stack array", file=environ["wsgi.errors"])
+        print("Wrong type in stack array: ", str(stack), file=environ["wsgi.errors"])
 
     return True
 
+
 def application(environ, start_response):
     if environ['PATH_INFO'] == '/style.css':
-        style=b'''H2 {
+        style = b'''H2 {
     font-family: Verdana, Tahoma, Arial, sans-serif;
 }
 H3 {
@@ -314,7 +365,24 @@ p  {
     font-family: Verdana, Tahoma, Arial, sans-serif;
     list-style-type: circle;
     margin-bottom: 5px
-}'''
+}
+.reference {
+display: none;
+}
+.reference ~ .story {
+display: none;
+}
+.reference + label {
+font-size: 10px;
+padding-left: 10px;
+background-color: lightgrey;
+cursor: pointer;
+display: inline-block;
+}
+.reference:checked ~ .story {
+display: block;
+}
+'''
         start_response('200 OK', [
             ('Content-Type', 'text/css; charset=utf-8'),
             ('Content-Length', str(len(style)))
@@ -398,9 +466,11 @@ function selectConfig(configName) {
         full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
         in_stop = inStopLists(environ)
         in_conf = None
-        if full_data:
+        platform = None
+        if full_data and not in_stop:
             in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], report['errorInfo']['applicationErrorInfo']['stack'], environ)
-        if full_data and not in_stop and in_conf:
+            platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+        if full_data and not in_stop and in_conf and not platform:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
@@ -491,7 +561,7 @@ function selectConfig(configName) {
             t = StringIO()
             if not full_data:
                 print("(stackHash-", 'stackHash' in report['errorInfo']['applicationErrorInfo'], ", errors-", 'errors' in report['errorInfo']['applicationErrorInfo'], ", configInfo-", 'configInfo' in report, ")", sep="", end="", file=t)
-            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), ", in_conf - ", in_conf, sep='', end='', file=environ["wsgi.errors"])
+            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
 
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
