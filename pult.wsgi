@@ -253,44 +253,58 @@ def inStopLists(environ):
 
 
 def platformError(errors, environ):
-    if isinstance(errors[-1][0], str):
+    try:
         if errors[-1][0].startswith('При работе формы произошла системная ошибка'):
+            print("p1:", str(errors[-1]), file=environ["wsgi.errors"])
             return True
-    else:
-        print("Wrong type in errors array:", str(errors), file=environ["wsgi.errors"])
 
-    if isinstance(errors[-1][1][0], str):        # ошибка обмена по сети
-        if errors[-1][1][0] == "NetworkError":
+        if len(errors[-1][1]) > 0 and errors[-1][1][0] == "NetworkError":        # ошибка обмена по сети
+            print("p2:", str(errors[-1]), file=environ["wsgi.errors"])
             return True
-    else:
-        print("2.Wrong type in errors array:", str(errors), file=environ["wsgi.errors"])
+
+        if len(errors) > 1 and errors[1][0].startswith('Ошибка передачи данных между клиентом и сервером'):
+            print("p3:", str(errors[1]), file=environ["wsgi.errors"])
+            return True
+    except:
+        print(str(errors), file=environ["wsgi.errors"])
+        raise
+
     return False
 
 
 def errorInConf(errors, stack, environ):
-    if isinstance(errors[0][0], str):
+    try:
         e = errors[0][0]
         if e.startswith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
+            print("e1:", e, file=environ["wsgi.errors"])
             return False
+
+        if errors[-1][0].startswith('Недостаточно прав'):
+            print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
+            return True
 
         #Ошибка в расширении
         dot = e.find('.')
         if dot != -1:
             space = e.find(' ', 2, dot)
             if space != -1 and not e.startswith('{E'):    # расширение, но не патч
+                print("e2:", e, file=environ["wsgi.errors"])
                 return False
 
-            dot2 = s.find('.', dot)
+            dot2 = e.find('.', dot+1)
             if dot2 != -1:
-                if e.find('_', dot, dot2) != -1:    # в имени объекта метаданных есть подчеркиавание, значит объект нетиповой
-                    return Fasle
-    else:
-        print("Wrong type in errors array", file=environ["wsgi.errors"])
+                if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркиавание, значит объект нетиповой
+                    print("e3:", e, file=environ["wsgi.errors"])
+                    return False
+    except:
+        print(str(errors), file=environ["wsgi.errors"])
+        raise
 
     # Вызов из объекта пользователя
-    if isinstance(stack[0][0], str):
+    try:
         s = stack[0][0]
         if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
+            print("s4:", s, file=environ["wsgi.errors"])
             return False
 
         for s1 in stack:
@@ -299,14 +313,17 @@ def errorInConf(errors, stack, environ):
             if dot != -1:
                 space = s.find(' ', 1, dot)
                 if space != -1 and not s.startswith('E'):   #расширение, но не патч
+                    print("s5:", s, file=environ["wsgi.errors"])
                     return False
 
-                dot2 = s.find('.', dot)
+                dot2 = s.find('.', dot+1)
                 if dot2 != -1:
-                    if s.find('_', dot, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
+                    if s.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
+                        print("s6:", s, file=environ["wsgi.errors"])
                         return False
-    else:
-        print("Wrong type in stack array: ", str(stack), file=environ["wsgi.errors"])
+    except:
+        print(str(stack), file=environ["wsgi.errors"])
+        raise
 
     return True
 
@@ -469,7 +486,8 @@ function selectConfig(configName) {
         platform = None
         if full_data and not in_stop:
             in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], report['errorInfo']['applicationErrorInfo']['stack'], environ)
-            platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+            if in_conf:
+                platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
         if full_data and not in_stop and in_conf and not platform:
             stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
 
@@ -529,13 +547,15 @@ function selectConfig(configName) {
                     if prev_reports is not None:
                         if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
+                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
                         elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>"
+                            SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                        elif prev_reports[2] is not None: 
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>'"
                         else:
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']
-                        SQLPacket += "' where rowid="+str(prev_reports[0])
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+report['time']+"</span>'"
+                        SQLPacket += " where rowid="+str(prev_reports[0])
 
                         cur = conn.cursor()
                         cur.execute(SQLPacket)
@@ -714,7 +734,7 @@ function selectConfig(configName) {
 
 
     url = environ['PATH_INFO'].split('/')
-    secret = True if url[1] == 's' else False
+    secret = True if len(url) > 1 and url[1] == 's' else False
     if secret:          # все нижелащие url могут находится в зоне с ограниченным доступом, префикс может быть равен 's'
         s = url.pop(0)
 
@@ -879,7 +899,7 @@ function selectConfig(configName) {
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скриншот' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
             found = True
 
         cur.close()
