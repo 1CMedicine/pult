@@ -104,8 +104,7 @@ def prepareErrorTable(cur, output, secret, issueN = 0):
                 ext_txt = json2html.convert(json=ext_json)
             except ValueError:
                 ext_txt = str(ext_json)
-            conf += '<input type="checkbox" id="hd-'+id+'" class="reference"/><label for="hd-'+id+'" > Раскрыть '+str(len(ext_json))+' расширений'+'</label>'
-            conf += "<span class='story'>"+ext_txt+"</span>"
+            conf += '<details><summary>'+str(len(ext_json))+' расширений</summary>'+ext_txt+"</details>\n"
 
         if prev_issueN != r[0]:
             if pr is not None:
@@ -279,9 +278,9 @@ def errorInConf(errors, stack, environ):
             print("e1:", e, file=environ["wsgi.errors"])
             return False
 
-        if errors[-1][0].startswith('Недостаточно прав'):
+        if errors[-1][0].startswith('Недостаточно прав') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
-            return True
+            return False
 
         #Ошибка в расширении
         dot = e.find('.')
@@ -383,21 +382,14 @@ p  {
     list-style-type: circle;
     margin-bottom: 5px
 }
-.reference {
-display: none;
+details {
+display:inline;
 }
-.reference ~ .story {
-display: none;
-}
-.reference + label {
+details > summary {
 font-size: 10px;
-padding-left: 10px;
 background-color: lightgrey;
-cursor: pointer;
-display: inline-block;
-}
-.reference:checked ~ .story {
-display: block;
+padding: 0px;
+margin: 0px 10px 5px 10px;
 }
 '''
         start_response('200 OK', [
