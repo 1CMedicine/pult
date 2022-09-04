@@ -45,14 +45,19 @@ def array2str(arrs, sql):
     start = True
     print("[", sep='', end='', file=sql)
     for line in arrs:
-        if start:
-            start = False
-        else:
-            print(",", sep='', end='', file=sql)
         if type(line) == list:
-            array2str(line, sql)
-        else:
-            print('"', line.replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
+            if len(line)>0:
+                if start:
+                    start = False
+                else:
+                   print(",", sep='', end='', file=sql)
+                array2str(line, sql)
+        elif len(line.strip())>0:
+            if start:
+                start = False
+            else:
+                print(",", sep='', end='', file=sql)
+            print('"', line.strip().replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
 
 
@@ -273,16 +278,35 @@ def platformError(errors, environ):
 
 def errorInConf(errors, stack, environ):
     try:
-        e = errors[0][0]
-        if e.startswith('{ВнешняяОбработка.') or e.startswith('{ВнешнийОтчет.'):
-            print("e1:", e, file=environ["wsgi.errors"])
+        if errors[0][0].startswith('{ВнешняяОбработка.') or errors[0][0].startswith('{ВнешнийОтчет.'):
+            print("e1:", errors[0][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[-1][0].startswith('{ВнешняяОбработка.') or errors[-1][0].startswith('{ВнешнийОтчет.'):
+            print("e4:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[0][0].find('Неизвестный модуль') != -1:
+            print("e5:", errors[0][0], file=environ["wsgi.errors"])
             return False
 
         if errors[-1][0].startswith('Недостаточно прав') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
 
-        #Ошибка в расширении
+        if errors[-1][0].startswith('Ошибка доступа к файлу'):
+            print("r2:", str(errors[-1]), file=environ["wsgi.errors"])
+            return False
+
+        if len(errors[0][1]) > 0 and errors[0][1][-1] == "ExceptionRaisedFromScript":
+            print("u1:", str(errors[0]), file=environ["wsgi.errors"])
+            return False
+
+        if len(errors[-1][1]) > 0 and errors[-1][1][-1] == "ScriptCompileError":
+            print("c1:", str(errors[-1]), file=environ["wsgi.errors"])
+            return False
+
+        e = errors[0][0]
         dot = e.find('.')
         if dot != -1:
             space = e.find(' ', 2, dot)
@@ -292,7 +316,7 @@ def errorInConf(errors, stack, environ):
 
             dot2 = e.find('.', dot+1)
             if dot2 != -1:
-                if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркиавание, значит объект нетиповой
+                if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
                     print("e3:", e, file=environ["wsgi.errors"])
                     return False
     except:
@@ -301,9 +325,8 @@ def errorInConf(errors, stack, environ):
 
     # Вызов из объекта пользователя
     try:
-        s = stack[0][0]
-        if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
-            print("s4:", s, file=environ["wsgi.errors"])
+        if stack[0][0].startswith('ВнешняяОбработка.') or stack[0][0].startswith('ВнешнийОтчет.'):
+            print("s4:", stack[0][0], file=environ["wsgi.errors"])
             return False
 
         for s1 in stack:
