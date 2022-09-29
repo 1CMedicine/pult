@@ -67,7 +67,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
         print(" class='marked'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
-        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span></td>", sep='', file=output)
+        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span><br><span class='descTime'>",r[10],"</span></td>", sep='', file=output)
 
     errors_txt = r[1]+"<br><br>"
     try:
@@ -290,7 +290,23 @@ def errorInConf(errors, stack, environ):
             print("e5:", errors[0][0], file=environ["wsgi.errors"])
             return False
 
-        if errors[-1][0].startswith('Недостаточно прав') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
+        if errors[-1][0].startswith('Ошибка при выполнении файловой операции'):
+            print("e6:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[-1][0].startswith('Конфликт блокировок при выполнении транзакции'):
+            print("e7:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[-1][0].startswith('Ошибка блокировки объекта'):
+            print("e8:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[-1][0].startswith('Ошибка совместного доступа к файлу'):
+            print("e9:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
 
@@ -525,9 +541,10 @@ function selectConfig(configName) {
             fn = str(uuid.uuid4())+".zip"
             needSendMail = False
             needStoreReport = False
+            time = report['time'][:10]
             if issue is None:
                 cur = conn.cursor()
-                cur.execute("insert into issue (stackHash, errors) values (?,?)", (stackHash, errors))
+                cur.execute("insert into issue (stackHash, errors, time) values (?,?,?)", (stackHash, errors, time))
                 cur.close()
 
                 cur = conn.cursor()
@@ -546,6 +563,10 @@ function selectConfig(configName) {
                     cur.close()
             else:
                 issue = issue[0]
+
+                cur = conn.cursor()
+                cur.execute("update issue set time=? where issueId=?", (time, issue))
+                cur.close()
 
                 prev_reports = None
                 if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report and 'screenshot' not in report:
@@ -834,9 +855,9 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.issueId desc,configName,configVersion,extentions"
+            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
         else:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc,configName,configVersion,extentions"
+            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc, issue.issueId desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)

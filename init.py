@@ -28,6 +28,7 @@ cur.execute("""create table if not exists issue (
     marked TEXT NOT NULL DEFAULT '',
     markedUser TEXT NOT NULL DEFAULT '',
     markedTime TEXT NOT NULL DEFAULT '',
+    time TEXT NOT NULL,
     UNIQUE(errors, stackHash)
 );""")
 
