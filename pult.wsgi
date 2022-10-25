@@ -6,6 +6,7 @@ import uuid
 import tempfile, shutil
 import zipfile
 import sqlite3
+import unicodedata
 from io import StringIO
 import json
 from json2html import *
@@ -306,6 +307,10 @@ def errorInConf(errors, stack, environ):
             print("e9:", errors[-1][0], file=environ["wsgi.errors"])
             return False
 
+        if errors[0][0].startswith('{Справочник.ВерсииРасширений.'):
+            print("e10:", errors[0][0], file=environ["wsgi.errors"])
+            return False
+
         if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
@@ -528,10 +533,13 @@ function selectConfig(configName) {
 
             prev_issue = None
             te = StringIO()
-
-            # схлапываем те строки, которые размножают одну ошибку в отчетах
             array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
+
+            # схлапываем те строки, которые размножают одну ошибку в отчета
             errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
+
+            # убираем непечатные символы, см http://www.fileformat.info/info/unicode/category/index.htm
+            errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll', 'Zs', 'Nd', 'Pd', 'Pe', 'Pf', 'Pi', 'Po', 'Ps')])
 
             cur = conn.cursor()
             cur.execute("select rowid from issue where stackHash=? and errors=?", (stackHash, errors))
@@ -581,16 +589,17 @@ function selectConfig(configName) {
                     cur.close()
 
                     if prev_reports is not None:
+                        descTime = report['time'][0:10]+" "+report['time'][11:]
                         if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
                         elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
                             SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += "<span class=\"descTime\">"+report['time']+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                            SQLPacket += "<span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
                         elif prev_reports[2] is not None: 
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+report['time']+"</span>'"
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>'"
                         else:
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+report['time']+"</span>'"
+                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+descTime+"</span>'"
                         SQLPacket += " where rowid="+str(prev_reports[0])
 
                         cur = conn.cursor()
@@ -935,7 +944,7 @@ function selectConfig(configName) {
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
             found = True
 
         cur.close()
