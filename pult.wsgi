@@ -7,6 +7,7 @@ import tempfile, shutil
 import zipfile
 import sqlite3
 import unicodedata
+import string
 from io import StringIO
 import json
 from json2html import *
@@ -58,7 +59,7 @@ def array2str(arrs, sql):
                 start = False
             else:
                 print(",", sep='', end='', file=sql)
-            print('"', line.strip().replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
+            print('"', line.strip().replace(">", "&#62;").replace("<", "&#60;").replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
     print("]", sep='', end='', file=sql)
 
 
@@ -535,11 +536,11 @@ function selectConfig(configName) {
             te = StringIO()
             array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
 
-            # схлапываем те строки, которые размножают одну ошибку в отчета
+            # схлапываем те строки, которые размножают одну ошибку в отчетах
             errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
 
-            # убираем непечатные символы, см http://www.fileformat.info/info/unicode/category/index.htm
-            errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll', 'Zs', 'Nd', 'Pd', 'Pe', 'Pf', 'Pi', 'Po', 'Ps')])
+            # убираем непечатные символы, русский берем из http://www.fileformat.info/info/unicode/category/index.htm
+            errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
             cur = conn.cursor()
             cur.execute("select rowid from issue where stackHash=? and errors=?", (stackHash, errors))
