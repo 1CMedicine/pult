@@ -24,12 +24,11 @@ cur = conn.cursor()
 cur.execute("""create table if not exists issue (
     issueId INTEGER PRIMARY KEY,
     errors TEXT NOT NULL,
-    stackHash TEXT NOT NULL,
     marked TEXT NOT NULL DEFAULT '',
     markedUser TEXT NOT NULL DEFAULT '',
     markedTime TEXT NOT NULL DEFAULT '',
     time TEXT NOT NULL,
-    UNIQUE(errors, stackHash)
+    UNIQUE(errors)
 );""")
 
 
@@ -59,6 +58,7 @@ cur.execute("""create table if not exists report (
     userDescription TEXT NULL,
     REMOTE_ADDR TEXT NOT NULL,
     hasFiles BOOLEAN NOT NULL CHECK (hasFiles IN (0, 1)),
+    stackHash TEXT NOT NULL,
     FOREIGN KEY(reportStackId) REFERENCES reportStack(stackId)
 );""")
 

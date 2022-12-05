@@ -65,11 +65,11 @@ def array2str(arrs, sql):
 
 def prepareErrorTableLine(r, output, secret, issueN):
     print("<tr", sep='', end='', file=output)
-    if len(r[6]) != 0:
+    if len(r[5]) != 0:
         print(" class='marked'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
-        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]),"</a></span><br><span class='descTime'>",r[10],"</span></td>", sep='', file=output)
+        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",'&nbsp;',str(r[0]),'&nbsp;',"</a></span><br><span class='descTime'>",r[9],"</span></td>", sep='', file=output)
 
     errors_txt = r[1]+"<br><br>"
     try:
@@ -78,14 +78,14 @@ def prepareErrorTableLine(r, output, secret, issueN):
     except:
         erros_txt = r[1]
 
-    print("<td style='word-wrap: break-word'>",errors_txt,"Хеш стека: ",r[2],"</td>",  file=output)
-    print("<td style='word-wrap: break-word;vertical-align: top;'>","<br>".join(r[3]),"</td>", sep='',  file=output)
+    print("<td style='word-wrap: break-word'>",errors_txt,"</td>",  file=output)
+    print("<td style='word-wrap: break-word;vertical-align: top;'>","<br>".join(r[2]),"</td>", sep='',  file=output)
     if secret:
-        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[6], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[5], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "' ",'''onclick='return confirm("Вы уверены?")'>удалить</a></small>''', sep='', file=output)
     else:
-        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[6], "'/>", sep='', file=output)
-    print("<span class='descTime'><br>", r[7], "<br>", r[8], "</span>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[5], "'/>", sep='', file=output)
+    print("<span class='descTime'><br>", r[6], "<br>", r[7], "</span>", sep='', file=output)
     print("</td></tr>", sep='', file=output)
 
 
@@ -102,25 +102,28 @@ def prepareErrorTable(cur, output, secret, issueN = 0):
     r = None
     stackId = []
     for r in cur.fetchall():
-        conf = r[3]+", "+r[4]
-        id = str(r[9])
+        conf = r[2]+", "+r[3]
+        id = str(r[8])
         stackId.append(id)
-        if len(r[5]) > 2:
-            ext_json = json.loads(r[5])
+        if len(r[4]) > 2:
+            ext_json = json.loads(r[4])
             try:
                 ext_txt = json2html.convert(json=ext_json)
             except ValueError:
                 ext_txt = str(ext_json)
-            conf += '<details><summary>'+str(len(ext_json))+' расширений</summary>'+ext_txt+"</details>\n"
+            if issueN != 0:
+                conf += '<details><summary>'+str(len(ext_json))+' расширений</summary>'+ext_txt+"</details>\n"
+            else:
+                conf += '<span class="summary">'+str(len(ext_json))+" расширений</span>\n"
 
         if prev_issueN != r[0]:
             if pr is not None:
                 prepareErrorTableLine(pr, output, secret, issueN)
             prev_issueN = r[0]
             pr = list(r)
-            pr[3] = [conf]
+            pr[2] = [conf]
         else:
-            pr[3].append(conf)
+            pr[2].append(conf)
 
     if pr is not None:
         prepareErrorTableLine(pr, output, secret, issueN)
@@ -232,10 +235,11 @@ def insertReport(conn, report, stackId, fn, environ):
         stackId,
         "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '' else None,
         environ['REMOTE_ADDR'],
-        1 if 'additionalFiles' in report or ('screenshot' in report and report['screenshot'] is not None) or 'additionalData' in report else 0)
+        1 if 'additionalFiles' in report or ('screenshot' in report and report['screenshot'] is not None) or 'additionalData' in report else 0,
+        report['errorInfo']['applicationErrorInfo']['stackHash'])
 
     cur = conn.cursor()
-    cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
+    cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
 
 
@@ -436,6 +440,12 @@ background-color: lightgrey;
 padding: 0px;
 margin: 0px 10px 5px 10px;
 }
+.summary {
+font-size: 10px;
+background-color: lightgrey;
+padding: 0px;
+margin: 0px 10px 5px 10px;
+}
 '''
         start_response('200 OK', [
             ('Content-Type', 'text/css; charset=utf-8'),
@@ -526,8 +536,6 @@ function selectConfig(configName) {
             if in_conf:
                 platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
         if full_data and not in_stop and in_conf and not platform:
-            stackHash = report['errorInfo']['applicationErrorInfo']['stackHash']
-
             conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
             conn.execute("PRAGMA foreign_keys=ON;")
             cur = conn.cursor()
@@ -543,7 +551,7 @@ function selectConfig(configName) {
             errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
             cur = conn.cursor()
-            cur.execute("select rowid from issue where stackHash=? and errors=?", (stackHash, errors))
+            cur.execute("select rowid from issue where errors=?", (errors,))
             issue = cur.fetchone()
             cur.close()
 
@@ -553,11 +561,11 @@ function selectConfig(configName) {
             time = report['time'][:10]
             if issue is None:
                 cur = conn.cursor()
-                cur.execute("insert into issue (stackHash, errors, time) values (?,?,?)", (stackHash, errors, time))
+                cur.execute("insert into issue (errors, time) values (?,?,?)", (errors, time))
                 cur.close()
 
                 cur = conn.cursor()
-                cur.execute("select issueId from issue where stackHash=? and errors=?", (stackHash, errors))
+                cur.execute("select issueId from issue where errors=?", (errors,))
                 issue = cur.fetchone()[0]
                 cur.close()
 
@@ -865,9 +873,9 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
         else:
-            SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc, issue.issueId desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
@@ -923,14 +931,14 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
 
         cur = conn.cursor()
-        SQLPacket = "select issue.issueId,errors,stackHash,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId=?"
+        SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId=?"
         cur.execute(SQLPacket, (url[2],))
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
 
         print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
-<th>Пользователь 1С</th>
+<th>Хеш стека</th>
 <th>IP адрес</th>
 <th>Версия платформы</th>
 <th>Платформа клиента</th>
@@ -945,7 +953,7 @@ function selectConfig(configName) {
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[1], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
             found = True
 
         cur.close()
