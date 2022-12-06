@@ -69,7 +69,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
         print(" class='marked'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
-        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",'&nbsp;',str(r[0]),'&nbsp;',"</a></span><br><span class='descTime'>",r[9],"</span></td>", sep='', file=output)
+        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]).zfill(5),"</a></span><br><span class='descTime'>",r[9],"</span></td>", sep='', file=output)
 
     errors_txt = r[1]+"<br><br>"
     try:
@@ -561,7 +561,7 @@ function selectConfig(configName) {
             time = report['time'][:10]
             if issue is None:
                 cur = conn.cursor()
-                cur.execute("insert into issue (errors, time) values (?,?,?)", (errors, time))
+                cur.execute("insert into issue (errors, time) values (?,?)", (errors, time))
                 cur.close()
 
                 cur = conn.cursor()
@@ -633,8 +633,6 @@ function selectConfig(configName) {
 
         else:
             t = StringIO()
-            if not full_data:
-                print("(stackHash-", 'stackHash' in report['errorInfo']['applicationErrorInfo'], ", errors-", 'errors' in report['errorInfo']['applicationErrorInfo'], ", configInfo-", 'configInfo' in report, ")", sep="", end="", file=t)
             print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
 
         start_response('200 OK', [
