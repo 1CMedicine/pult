@@ -80,11 +80,12 @@ def prepareErrorTableLine(r, output, secret, issueN):
 
     print("<td style='word-wrap: break-word'>",errors_txt,"</td>",  file=output)
     print("<td style='word-wrap: break-word;vertical-align: top;'>","<br>".join(r[2]),"</td>", sep='',  file=output)
+    txt = r[5].replace("'","&amp;")
     if secret:
-        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' value='", r[5], "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' title='", txt ,"' value='", txt, "' onchange='mark(\"line",str(r[0]),"\")'/>", sep='', file=output)
         print("<br><small><a href='", prefs.SITE_URL,"/s/delete/",str(r[0]), "' ",'''onclick='return confirm("Вы уверены?")'>удалить</a></small>''', sep='', file=output)
     else:
-        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' disabled value='", r[5], "'/>", sep='', file=output)
+        print("<td align='center'><input type='text' size='10' id='line",str(r[0]), "' title='", txt ,"' disabled value='", txt, "'/>", sep='', file=output)
     print("<span class='descTime'><br>", r[6], "<br>", r[7], "</span>", sep='', file=output)
     print("</td></tr>", sep='', file=output)
 
