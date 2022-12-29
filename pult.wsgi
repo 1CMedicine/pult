@@ -17,6 +17,7 @@ from email.header import Header
 from threading import Thread
 import datetime
 import re
+import whois
 
 local_path = os.path.split(__file__)[0]
 if local_path not in sys.path:
@@ -219,6 +220,36 @@ def insertReportStack(conn, report, issueId):
         cur.close()
 
     return stackId
+
+
+def whois_cache(conn, environ):
+    cur = conn.cursor()
+    cur.execute("select time from whois where ip=?", (environ['REMOTE_ADDR'],))
+    whois_name = cur.fetchone()
+    cur.close()
+
+    if whois_name is not None:
+        year = datetime.datetime.now().strftime('%y')
+        if whois_name[0][6:7] != year:
+            cur = conn.cursor()
+            cur.execute("delete from whois where ip=?", (environ['REMOTE_ADDR'],))
+            cur.close()
+            conn.commit()
+            print("clear whois cache:", environ['REMOTE_ADDR'], " ", whois_name[0], sep='', end='', file=environ["wsgi.errors"])
+            whois_name = None
+
+    if whois_name is None:
+        name = None
+        try:
+            name = whois.whois(environ['REMOTE_ADDR'])
+        except Exception:
+            pass
+
+        if name is not None and name.domain_name is not None or name.org is not None:
+            cur = conn.cursor()
+            cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], name.domain_name, name.org, datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+            cur.close()
+            conn.commit()
 
 
 def insertReport(conn, report, stackId, fn, environ):
@@ -560,6 +591,8 @@ function selectConfig(configName) {
             needSendMail = False
             needStoreReport = False
             time = report['time'][:10]
+            if USE_WHOIS:
+                whois_cache(conn, environ)
             if issue is None:
                 cur = conn.cursor()
                 cur.execute("insert into issue (errors, time) values (?,?)", (errors, time))
@@ -945,14 +978,19 @@ function selectConfig(configName) {
 <th>dataSeparation</th>
 <th>СУБД</th>
 <th>changeEnabled</th>
-    <th>Описание пользователя</th>
+<th>Описание пользователя</th>
 <th>Число отчетов</th></tr>''', sep='', file=output)
         cur = conn.cursor()
-        SQLPacket = "select * from report where reportStackId in ("+','.join(stackId)+") order by time desc"
+        SQLPacket = "select report.*, whois.name, whois.org from report left join whois on REMOTE_ADDR=whois.ip where reportStackId in ("+','.join(stackId)+") order by time desc"
         cur.execute(SQLPacket)
         found = False
         for r in cur.fetchall():
-            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", r[13], "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            ip_name = r[13]
+            if r[16] is not None: 
+                ip_name += "<br><a href='http://"+r[16]+"'>" + r[16]+"</a>"
+            if r[17] is not None: 
+                ip_name += "<br>" + r[17]
+            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
             found = True
 
         cur.close()

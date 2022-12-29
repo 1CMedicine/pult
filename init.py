@@ -67,6 +67,14 @@ cur.execute("""create table if not exists smtpQueue (
     FOREIGN KEY(issueId) REFERENCES issue(issueId) ON DELETE CASCADE
 );""")
 
+cur.execute("""create table if not exists whois (
+    ip TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    org TEXT,
+    time TEXT NOT NULL,
+    UNIQUE(ip)
+);""")
+
 cur.execute("CREATE INDEX IF NOT EXISTS report_reportstack_index ON report (reportStackId);")
 cur.execute("CREATE INDEX IF NOT EXISTS reportStack_issue_index ON reportStack (issueId);")
 conn.commit()
