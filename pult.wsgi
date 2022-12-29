@@ -591,7 +591,7 @@ function selectConfig(configName) {
             needSendMail = False
             needStoreReport = False
             time = report['time'][:10]
-            if USE_WHOIS:
+            if prefs.USE_WHOIS:
                 whois_cache(conn, environ)
             if issue is None:
                 cur = conn.cursor()
