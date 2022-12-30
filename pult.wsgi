@@ -230,12 +230,12 @@ def whois_cache(conn, environ):
 
     if whois_name is not None:
         year = datetime.datetime.now().strftime('%y')
-        if whois_name[0][6:7] != year:
+        if whois_name[0][6:8] != year:
             cur = conn.cursor()
             cur.execute("delete from whois where ip=?", (environ['REMOTE_ADDR'],))
             cur.close()
             conn.commit()
-            print("clear whois cache:", environ['REMOTE_ADDR'], " ", whois_name[0], sep='', end='', file=environ["wsgi.errors"])
+            print("clear whois cache:", environ['REMOTE_ADDR'], whois_name[0], sep=' ', end='', file=environ["wsgi.errors"])
             whois_name = None
 
     if whois_name is None:
