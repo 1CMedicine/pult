@@ -408,6 +408,132 @@ def errorInConf(errors, stack, environ):
     return True
 
 
+def clear(conn, output, delete):
+    if not delete:
+        cur = conn.cursor()
+        cur.execute("select count(*) from issue")
+        totalErrorsCount = cur.fetchone()[0]
+        cur.close()
+
+        print("<p>Ошибок в базе - ", str(totalErrorsCount), "</p>", sep='', end='', file=output)
+
+        cur = conn.cursor()
+        cur.execute("select count(*) from report")
+        totalReportsCount = cur.fetchone()[0]
+        cur.close()
+
+        print("<p>Отчетов в базе - ", str(totalReportsCount), "</p>", sep='', end='', file=output)
+
+    # выбираем все отчеты и ошибки, которые надо оставить по критерию - конфа/версия
+    stackIds = set()
+    issueIds = set()
+    reportsCount = 0
+    for name in prefs.CONFIGS:
+        sql = StringIO()
+        start = True
+        print("select issueId, stackId from reportStack where configName='", name,"' and (", sep='', end='', file=sql)
+        for ver in prefs.CONFIGS[name][0]:
+            if not start:
+                print(" or", sep='', end='', file=sql)
+            else:
+                start = False
+            print(" configVersion like '", ver,"%'", sep='', end='', file=sql)
+        print(")", sep='', end='', file=sql)
+        cur = conn.cursor()
+        cur.execute(sql.getvalue())
+
+        for r in cur.fetchall():
+            issueIds.add(str(r[0]))
+            stackIds.add(str(r[1]))
+        cur.close()
+        sql.close()
+
+    # удаляем по блеклисту, не трогаем ошибки с комментариями
+    if len(prefs.BLACKLIST) > 0:
+        sql = StringIO()
+        cur = conn.cursor()
+        print("select reportStackId, file, issue.issueId from report innert join reportStack on reportStack.stackId=reportStackId inner join issue on issue.issueId=reportStack.issueId where issue.marked='' and (", sep='', end='', file=sql)
+        start = True
+        for ip in prefs.BLACKLIST:
+            if start:
+                start = False
+            else:
+                print(" or ", sep='', end='', file=sql)
+            print("REMOTE_ADDR like '", ip,"%'", sep='', end='', file=sql)
+        print(")", sep='', end='', file=sql)
+        cur = conn.cursor()
+        cur.execute(sql.getvalue())
+        if not delete:
+            print("<p>Удаляются отчеты от хостов из блеклиста:</p><ol>", file=output)
+        for r in cur.fetchall():
+            if str(r[0]) in stackIds:
+                stackIds.remove(str(r[0]))
+            if os.path.exists(prefs.DATA_PATH+"/"+r[1]):
+                if delete:
+                    os.remove(prefs.DATA_PATH+"/"+r[1])
+                else:
+                    print("<li>"+prefs.DATA_PATH+"/"+r[1]+"</li>", file=output)
+                reportsCount += 1
+        if not delete:
+            print("</ol>", file=output)
+        cur.close()
+        sql.close()
+
+    # удаляем все отчеты, которые не соотвествуют критерию - конфа/версия
+    cur = conn.cursor()
+    cur.execute("select file from report where reportStackId not in ("+",".join(stackIds)+")")
+    if not delete:
+        print("<p>Удаляются отчеты неподдерживаемых конфигураций и версий:</p><ol>", file=output)
+    for r in cur.fetchall():
+        if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
+            if delete:
+                os.remove(prefs.DATA_PATH+"/"+r[0])
+            else:
+                print("<li>"+prefs.DATA_PATH+"/"+r[1]+"</li>", file=output)
+            reportsCount += 1
+    if not delete:
+        print("</ol>", file=output)
+    cur.close()
+
+    if delete:
+        # удаляем все отчеты, которые не соотвествуют критерию - конфа/версия
+        cur = conn.cursor()
+        cur.execute("delete from report where reportStackId not in ("+",".join(stackIds)+")")
+        cur.close()
+
+        # удаляем все стеки, которые не соотвествуют критерию - конфа/версия
+        cur = conn.cursor()
+        cur.execute("delete from reportStack where stackId not in ("+",".join(stackIds)+")")
+        cur.close()
+
+    # получить список ошибок на которые ссылаются удаляемые репорты, но при этом есть ссылки на неудаляемые
+    cur = conn.cursor()
+    cur.execute("select reportStack.issueId from reportStack inner join report on reportStack.stackId=report.reportStackId where report.reportStackId in (" + ",".join(stackIds) + ")")
+    for r in cur.fetchall():
+        issueIds.add(str(r[0]))
+    cur.close()
+
+    if delete:
+        cur = conn.cursor()
+        cur.execute("delete from issue where issueId not in (" + ",".join(issueIds) + ")")
+        cur.close()
+    else:
+        cur = conn.cursor()
+        cur.execute("select issueId from issue where issueId not in (" + ",".join(issueIds) + ")")
+        print("<p>Удаляются ошибки:</p>", file=output)
+        errorsCount = 0
+        for r in cur.fetchall():
+            print("<a href='", prefs.SITE_URL, "/s/reports/",str(r[0]),"'>",str(r[0]).zfill(5),"</a><br>", sep='', file=output)
+            errorsCount += 1
+        cur.close()
+        print("</ol>", file=output)
+        print("<p>Удаляется ошибок: ", errorsCount, ", отчетов: ", reportsCount, "</p>", sep='', file=output)
+        print("<p>Остается ошибок: ", len(issueIds), ", отчетов: ", str(totalReportsCount-reportsCount), "</p>", sep='', file=output)
+
+    if delete:
+       conn.commit()
+
+
 def application(environ, start_response):
     if environ['PATH_INFO'] == '/style.css':
         style = b'''H2 {
@@ -720,94 +846,33 @@ function selectConfig(configName) {
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
-
-        cur = conn.cursor()
-        cur.execute("select count(*) from issue")
-        totalErrorsCount = cur.fetchone()[0]
-        cur.close()
-
-        stackIds = set()
-        issueIds = set()
-        errorsCount = 0
-        reportsCount = 0
-        for name in prefs.CONFIGS:
-            sql = StringIO()
-            print("select issueId, stackId from reportStack where configName='", name,"'", sep='', end='', file=sql)
-            for ver in prefs.CONFIGS[name][0]:
-                print(" and configVersion like '", ver,"%'", sep='', end='', file=sql)
-            cur = conn.cursor()
-            cur.execute(sql.getvalue())
-
-            for r in cur.fetchall():
-                issueIds.add(str(r[0]))
-                stackIds.add(str(r[1]))
-            cur.close()
-            sql.close()
-
-        # удаляем по блеклисту, не трогаем ошибки с комментариями
-        if len(prefs.BLACKLIST) > 0:
-            sql = StringIO()
-            cur = conn.cursor()
-            print("select reportStackId, file, issue.issueId from report innert join reportStack on reportStack.stackId=reportStackId inner join issue on issue.issueId=reportStack.issueId where issue.marked='' and (", sep='', end='', file=sql)
-            start = True
-            for ip in prefs.BLACKLIST:
-                if start:
-                    start = False
-                else:
-                    print(" or ", sep='', end='', file=sql)
-                print("REMOTE_ADDR like '", ip,"%'", sep='', end='', file=sql)
-            print(")", sep='', end='', file=sql)
-            cur = conn.cursor()
-            cur.execute(sql.getvalue())
-            for r in cur.fetchall():
-                if str(r[0]) in stackIds:
-                    stackIds.remove(str(r[0]))
-                if str(r[2]) in issueIds:
-                    issueIds.remove(str(r[2]))
-                if os.path.exists(prefs.DATA_PATH+"/"+r[1]):
-                    os.remove(prefs.DATA_PATH+"/"+r[1])
-                    reportsCount += 1
-            cur.close()
-            sql.close()
-
-        cur = conn.cursor()
-        cur.execute("select file from report where reportStackId not in ("+",".join(stackIds)+")")
-        for r in cur.fetchall():
-            if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
-                os.remove(prefs.DATA_PATH+"/"+r[0])
-                reportsCount += 1
-        cur.close()
-
-        cur = conn.cursor()
-        cur.execute("delete from report where reportStackId not in ("+",".join(stackIds)+")")
-        cur.close()
-
-        cur = conn.cursor()
-        cur.execute("delete from reportStack where stackId not in ("+",".join(stackIds)+")")
-        cur.close()
-
-        # получить список стеков на которые ссылаются удаляемые репорты, но при этом есть ссылки на неудаляемые
-        cur = conn.cursor()
-        cur.execute("select reportStack.stackId from reportStack inner join report on reportStack.stackId=report.reportStackId where report.reportStackId not in (" + ",".join(stackIds) + ")")
-        for r in cur.fetchall():
-            stackIds.add(str(r[0]))
-        cur.close()
-
-        # получить список ошибок на которые ссылаются удаляемые репорты, но при этом есть ссылки на неудаляемые
-        cur = conn.cursor()
-        cur.execute("select issue.issueId from issue inner join reportStack on issue.issueId=reportStack.issueId where issue.issueId not in (" + ",".join(issueIds) + ")")
-        for r in cur.fetchall():
-            issueIds.add(str(r[0]))
-        cur.close()
-
-        cur = conn.cursor()
-        cur.execute("delete from issue where issueId not in (" + ",".join(issueIds) + ")")
-        cur.close()
-
-        conn.commit()
+        clear(conn, output, False)
+        print("<H2><a href='", prefs.SITE_URL,"/s/clear_ok' ",'''onclick='return confirm("Вы уверены?")'>Удалить</a></H2>''', sep='', file=output)
         conn.close()
 
-        print("<H3>Удалено ошибок: ", totalErrorsCount-len(issueIds), ", отчетов: ", reportsCount, "</H3>", sep='', file=output)
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
+        print("</body></html>", sep='', end='', file=output)
+
+        ret = output.getvalue().encode('UTF-8')
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(ret)))
+        ])
+        return [ret]
+
+    if environ['PATH_INFO'] == '/s/clear_ok':
+        output = StringIO()
+        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
+        print("<meta charset='utf-8'>", sep='', file=output)
+        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
+        print("<title>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</title>", sep='', file=output)
+        print("</head><body><h2>Удалено</h2>", sep='', file=output)
+
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        clear(conn, output, True)
+        conn.close()
+
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
         print("</body></html>", sep='', end='', file=output)
 
