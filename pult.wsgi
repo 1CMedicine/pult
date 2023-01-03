@@ -468,6 +468,8 @@ def clear(conn, output, delete):
         for r in cur.fetchall():
             if str(r[0]) in stackIds:
                 stackIds.remove(str(r[0]))
+            if str(r[2]) in issueIds:
+                issueIds.remove(str(r[2]))
             if os.path.exists(prefs.DATA_PATH+"/"+r[1]):
                 if delete:
                     os.remove(prefs.DATA_PATH+"/"+r[1])
