@@ -755,7 +755,8 @@ function selectConfig(configName) {
 
                     i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
                     cur = conn.cursor()
-                    cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                    # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                    cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
                     prev_reports = cur.fetchone()
                     cur.close()
 
@@ -1057,7 +1058,13 @@ function selectConfig(configName) {
                 ip_name += "<br><a href='http://"+r[16]+"'>" + r[16]+"</a>"
             if r[17] is not None: 
                 ip_name += "<br>" + r[17]
-            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td><td align='center'>","<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a></td></tr>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td>", sep='', file=output)
+            print("<td align='center'>", sep='', file=output)
+            if r[9] != "":
+                print("<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a>", sep='', file=output)
+            else:        # было удаление отчета из файловой системы
+                print('Был удален :(', sep='', file=output)
+            print("</td></tr>", sep='', file=output)
             found = True
 
         cur.close()
@@ -1076,7 +1083,7 @@ function selectConfig(configName) {
         return [ret]
 
 
-    if len(url) == 3 and url[1] == 'report' and os.path.exists(prefs.DATA_PATH+"/"+url[2]):
+    if len(url) == 3 and url[1] == 'report' and ".." not in url[2] and os.path.exists(prefs.DATA_PATH+"/"+url[2]):
        # отчет в открытой и закрытой зонах
         status = '200 OK'
         response_headers = [('Content-type', 'application/zip')]
