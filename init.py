@@ -59,6 +59,7 @@ cur.execute("""create table if not exists report (
     REMOTE_ADDR TEXT NOT NULL,
     hasFiles BOOLEAN NOT NULL CHECK (hasFiles IN (0, 1)),
     stackHash TEXT NOT NULL,
+    hasScreenshot BOOLEAN NOT NULL CHECK (hasScreenshot IN (0, 1)),
     FOREIGN KEY(reportStackId) REFERENCES reportStack(stackId)
 );""")
 

@@ -267,11 +267,12 @@ def insertReport(conn, report, stackId, fn, environ):
         stackId,
         "<span class=\"descTime\">" + report['time'] + "</span>&nbsp;<span class=\"desc\">" + report['errorInfo']['userDescription'] + "</span>" if 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '' else None,
         environ['REMOTE_ADDR'],
-        1 if 'additionalFiles' in report or ('screenshot' in report and report['screenshot'] is not None) or 'additionalData' in report else 0,
-        report['errorInfo']['applicationErrorInfo']['stackHash'])
+        1 if 'additionalFiles' in report or  'additionalData' in report else 0,
+        report['errorInfo']['applicationErrorInfo']['stackHash'],
+        1 if 'screenshot' in report and report['screenshot'] is not None else 0)
 
     cur = conn.cursor()
-    cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
+    cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
 
 
@@ -748,17 +749,25 @@ function selectConfig(configName) {
                 cur.close()
 
                 prev_reports = None
-                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report and 'screenshot' not in report:
+                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
                     t = StringIO()
                     if 'extentions' in report['configInfo']: 
                         array2str(report['configInfo']['extentions'], t)
 
                     i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
-                    cur = conn.cursor()
-                    # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                    cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
-                    prev_reports = cur.fetchone()
-                    cur.close()
+                    prev_reports = None
+                    if 'screenshot' in report and report['screenshot'] is not None:
+                        cur = conn.cursor()
+                        # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                        prev_reports = cur.fetchone()
+                        cur.close()
+                    else:
+                        cur = conn.cursor()
+                        # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                        prev_reports = cur.fetchone()
+                        cur.close()
 
                     if prev_reports is not None:
                         descTime = report['time'][0:10]+" "+report['time'][11:]
@@ -1054,16 +1063,25 @@ function selectConfig(configName) {
         found = False
         for r in cur.fetchall():
             ip_name = r[13]
-            if r[16] is not None: 
-                ip_name += "<br><a href='http://"+r[16]+"'>" + r[16]+"</a>"
             if r[17] is not None: 
-                ip_name += "<br>" + r[17]
+                ip_name += "<br><a href='http://"+r[17]+"'>" + r[17]+"</a>"
+            if r[18] is not None: 
+                ip_name += "<br>" + r[18]
             print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td>", sep='', file=output)
             print("<td align='center'>", sep='', file=output)
             if r[9] != "":
-                print("<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>",'Файл/скрин ('+str(r[8])+')' if r[14]==1 else r[8],"</a>", sep='', file=output)
+                print("<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>", sep='', file=output)
+                if r[14] == 1 and r[16] == 1:
+                    print('Файл/Скрин ('+str(r[8])+')', sep='', file=output)
+                elif r[14] == 1:
+                    print('Файл ('+str(r[8])+')', sep='', file=output)
+                elif r[16] == 1:
+                    print('Скрин ('+str(r[8])+')', sep='', file=output)
+                else:
+                    print(str(r[8]), sep='', file=output)
+                print("</a>", sep='', file=output)
             else:        # было удаление отчета из файловой системы
-                print('Был удален :(', sep='', file=output)
+                print('Был удален :(<br>Ждите новый', sep='', file=output)
             print("</td></tr>", sep='', file=output)
             found = True
 
