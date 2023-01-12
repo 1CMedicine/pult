@@ -107,25 +107,22 @@ def prepareErrorTable(cur, output, secret, issueN = 0):
         conf = r[2]+", "+r[3]
         id = str(r[8])
         stackId.append(id)
-        if len(r[4]) > 2:
+        if len(r[4]) > 0 and issueN != 0:
             ext_json = json.loads(r[4])
             try:
                 ext_txt = json2html.convert(json=ext_json)
             except ValueError:
                 ext_txt = str(ext_json)
-            if issueN != 0:
-                conf += '<details><summary>'+str(len(ext_json))+' расширений</summary>'+ext_txt+"</details>\n"
-            else:
-                conf += '<span class="summary">'+str(len(ext_json))+" расширений</span>\n"
+            conf += '<details><summary>'+str(len(ext_json))+' расширений</summary>'+ext_txt+"</details>\n"
 
         if prev_issueN != r[0]:
             if pr is not None:
                 prepareErrorTableLine(pr, output, secret, issueN)
             prev_issueN = r[0]
             pr = list(r)
-            pr[2] = [conf]
+            pr[2] = {conf: 1}
         else:
-            pr[2].append(conf)
+            pr[2][conf] = 1
 
     if pr is not None:
         prepareErrorTableLine(pr, output, secret, issueN)
@@ -245,7 +242,7 @@ def whois_cache(conn, environ):
         except Exception:
             pass
 
-        if name is not None and name.domain_name is not None or name.org is not None:
+        if name is not None and (name.domain_name is not None or name.org is not None):
             cur = conn.cursor()
             cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], name.domain_name, name.org, datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
             cur.close()
@@ -1047,7 +1044,7 @@ function selectConfig(configName) {
 
         print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
-<th>Хеш стека</th>
+<th>Хеш стека/ID клиента</th>
 <th>IP адрес</th>
 <th>Версия платформы</th>
 <th>Платформа клиента</th>
@@ -1067,7 +1064,7 @@ function selectConfig(configName) {
                 ip_name += "<br><a href='http://"+r[17]+"'>" + r[17]+"</a>"
             if r[18] is not None: 
                 ip_name += "<br>" + r[18]
-            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td>", sep='', file=output)
+            print("<tr><td><span class='descTime'>", r[0][0:10]," ",r[0][11:], "</span></td><td>", r[15],"<br>", r[7], "</td><td>", ip_name, "</td><td>", r[2], "</td><td>",r[3],"</td><td>", r[4],"</td><td>",r[5],"</td><td>", r[6],"</td><td align='center'>",r[10],"</td><td>","" if r[12] is None else r[12],"</td>", sep='', file=output)
             print("<td align='center'>", sep='', file=output)
             if r[9] != "":
                 print("<a href='",prefs.SITE_URL,"/s" if secret else "","/report/",r[9],"'>", sep='', file=output)
