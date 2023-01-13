@@ -305,6 +305,10 @@ def platformError(errors, environ):
         if len(errors) > 1 and errors[1][0].startswith('Ошибка передачи данных между клиентом и сервером'):
             print("p3:", str(errors[1]), file=environ["wsgi.errors"])
             return True
+
+        if len(errors) > 1 and errors[1][0].startswith('Превышен максимальный расход памяти сервера за один вызов'):
+            print("p4:", str(errors[1]), file=environ["wsgi.errors"])
+            return True
     except:
         print(str(errors), file=environ["wsgi.errors"])
         raise
