@@ -366,19 +366,20 @@ def errorInConf(errors, stack, environ):
             print("c1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
 
-        e = errors[0][0]
-        dot = e.find('.')
-        if dot != -1:
-            space = e.find(' ', 2, dot)
-            if space != -1 and not e.startswith('{E'):    # расширение, но не патч
-                print("e2:", e, file=environ["wsgi.errors"])
-                return False
-
-            dot2 = e.find('.', dot+1)
-            if dot2 != -1:
-                if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
-                    print("e3:", e, file=environ["wsgi.errors"])
+        for e1 in errors:
+            e = e1[0]
+            dot = e.find('.')
+            if dot != -1:
+                space = e.find(' ', 2, dot)
+                if space != -1 and not e.startswith('{E'):    # расширение, но не патч
+                    print("e2:", e, file=environ["wsgi.errors"])
                     return False
+
+                dot2 = e.find('.', dot+1)
+                if dot2 != -1:
+                    if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
+                        print("e3:", e, file=environ["wsgi.errors"])
+                        return False
     except:
         print(str(errors), file=environ["wsgi.errors"])
         raise
@@ -751,22 +752,18 @@ function selectConfig(configName) {
 
                 prev_reports = None
                 if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
-                    t = StringIO()
-                    if 'extentions' in report['configInfo']: 
-                        array2str(report['configInfo']['extentions'], t)
-
-                    i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], t.getvalue())
+                    i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
                     prev_reports = None
                     if 'screenshot' in report and report['screenshot'] is not None:
                         cur = conn.cursor()
                         # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
                         prev_reports = cur.fetchone()
                         cur.close()
                     else:
                         cur = conn.cursor()
                         # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=? and extentions=?", i)
+                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
                         prev_reports = cur.fetchone()
                         cur.close()
 
@@ -806,7 +803,7 @@ function selectConfig(configName) {
 
         else:
             t = StringIO()
-            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, t.getvalue(), ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
+            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
 
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
