@@ -45,23 +45,24 @@ def read(environ):
 
 
 def array2str(arrs, sql):
-    start = True
-    print("[", sep='', end='', file=sql)
+    sql2 = StringIO()
+    sql2.write("[")
     for line in arrs:
         if type(line) == list:
             if len(line)>0:
-                if start:
-                    start = False
-                else:
-                   print(",", sep='', end='', file=sql)
-                array2str(line, sql)
+                array2str(line, sql2)
         elif len(line.strip())>0:
-            if start:
-                start = False
-            else:
-                print(",", sep='', end='', file=sql)
-            print('"', line.strip().replace(">", "&#62;").replace("<", "&#60;").replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"), '"', sep='', end='', file=sql)
-    print("]", sep='', end='', file=sql)
+            if sql2.tell() > 1:
+                sql2.write(',')
+            sql2.write('"') 
+            sql2.write(line.strip().replace(">", "&#62;").replace("<", "&#60;").replace("\"", "&#34;").replace('\n', "<br>").replace('\t', "&#9;").replace("'", "&apos;").replace('\\', "&#92;"))
+            sql2.write('"')
+    sql2.write("]")
+    if sql2.tell() != 2:        # '[]' - empty array
+        if sql.tell() > 1:
+            sql.write(',')
+        sql.write(sql2.getvalue())
+
 
 
 def prepareErrorTableLine(r, output, secret, issueN):
@@ -923,7 +924,7 @@ function selectConfig(configName) {
         cur = conn.cursor()
         cur.execute("select file from report where reportStackId in ("+",".join(stackIds)+")")
         for r in cur.fetchall():
-            if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
+            if len(r[0]) != 0 and os.path.exists(prefs.DATA_PATH+"/"+r[0]):
                 os.remove(prefs.DATA_PATH+"/"+r[0])
                 reportsCount += 1
         cur.close()
