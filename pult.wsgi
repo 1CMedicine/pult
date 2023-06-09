@@ -18,6 +18,7 @@ from threading import Thread
 import datetime
 import re
 import whois
+from ipwhois import IPWhois
 
 local_path = os.path.split(__file__)[0]
 if local_path not in sys.path:
@@ -62,7 +63,6 @@ def array2str(arrs, sql):
         if sql.tell() > 1:
             sql.write(',')
         sql.write(sql2.getvalue())
-
 
 
 def prepareErrorTableLine(r, output, secret, issueN):
@@ -241,6 +241,7 @@ def whois_cache(conn, environ):
         try:
             name = whois.whois(environ['REMOTE_ADDR'])
         except Exception:
+            print('ERROR: ', whois(environ['REMOTE_ADDR']), ' ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
             pass
 
         if name is not None and (name.domain_name is not None or name.org is not None):
@@ -248,6 +249,19 @@ def whois_cache(conn, environ):
             cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], name.domain_name, name.org, datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
             cur.close()
             conn.commit()
+        else:
+            try:
+                obj = IPWhois(environ['REMOTE_ADDR'])
+                res = obj.lookup_whois()
+            except Exception as e:
+                print('ERROR: ', IPWhois(environ['REMOTE_ADDR']), ' ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
+                pass
+
+            if res is not None:
+                cur = conn.cursor()
+                cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], res['asn_cidr'], res['asn_description'], datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+                cur.close()
+                conn.commit()
 
 
 def insertReport(conn, report, stackId, fn, environ):
@@ -474,10 +488,10 @@ def clear(conn, output, delete):
                 stackIds.remove(str(r[0]))
             if str(r[2]) in issueIds:
                 issueIds.remove(str(r[2]))
-            if os.path.exists(prefs.DATA_PATH+"/"+r[1]):
+            if len(r[1]) > 0 and os.path.exists(prefs.DATA_PATH+"/"+r[1]):
                 if delete:
                     os.remove(prefs.DATA_PATH+"/"+r[1])
-                else:
+                elif not delete:
                     print("<li>"+prefs.DATA_PATH+"/"+r[1]+"</li>", file=output)
                 reportsCount += 1
         if not delete:
@@ -491,11 +505,11 @@ def clear(conn, output, delete):
     if not delete:
         print("<p>Удаляются отчеты неподдерживаемых конфигураций и версий:</p><ol>", file=output)
     for r in cur.fetchall():
-        if os.path.exists(prefs.DATA_PATH+"/"+r[0]):
+        if len(r[0]) > 0 and os.path.exists(prefs.DATA_PATH+"/"+r[0]):
             if delete:
                 os.remove(prefs.DATA_PATH+"/"+r[0])
-            else:
-                print("<li>"+prefs.DATA_PATH+"/"+r[1]+"</li>", file=output)
+            elif not delete:
+                print("<li>"+prefs.DATA_PATH+"/"+r[0]+"</li>", file=output)
             reportsCount += 1
     if not delete:
         print("</ol>", file=output)
