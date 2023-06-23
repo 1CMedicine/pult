@@ -289,7 +289,7 @@ def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
 
-    if not report['configInfo']['changeEnabled'] and changeEnables != 0:
+    if not report['configInfo']['changeEnabled'] and changeEnabled != 0:
         cur = conn.cursor()
         cur.execute("update issue set changeEnabled=0 where issueId=(?)", issueId)
         cur.close()
@@ -1038,12 +1038,12 @@ function selectNetwork(network) {
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
 <title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
 </head><body><H2>Список ошибок сервиса регистрации ошибок</H2>
-<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке</br>
-<span class='marked'>Бирюзовый фон</span> - есть отметка</p></small>
+<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
+<span class='marked'>Бирюзовый фон</span> - есть отметка</small></p>
 ''', sep='', file=output)
 
         if secret:
-            print("<br><p>Фильтры на: конфигурацию - <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
+            print("<p>Фильтры на: конфигурацию - <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
 
             if len(url) == 2 or len(url) == 3 and not url2_is_d:
                 print("<option value='sn' selected/>", sep='', file=output)
