@@ -36,7 +36,7 @@ def read(environ):
     stream = environ['wsgi.input']
     body = tempfile.NamedTemporaryFile(mode='w+b')
     while length > 0:
-        part = stream.read(min(length, 1024*200)) # 200KB buffer size
+        part = stream.read(min(length, 1024*500)) # 500KB buffer size
         if not part: break
         body.write(part)
         length -= len(part)
@@ -69,6 +69,8 @@ def prepareErrorTableLine(r, output, secret, issueN):
     print("<tr", sep='', end='', file=output)
     if len(r[5]) != 0:
         print(" class='marked'", sep='', end='', file=output)
+    elif r[10] is not None:
+        print(" class='original_conf'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
         print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]).zfill(5),"</a></span><br><span class='descTime'>",r[9],"</span></td>", sep='', file=output)
@@ -240,8 +242,8 @@ def whois_cache(conn, environ):
         name = None
         try:
             name = whois.whois(environ['REMOTE_ADDR'])
-        except Exception:
-            print('ERROR: ', whois(environ['REMOTE_ADDR']), ' ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
+        except Exception as e:
+            print('ERROR: whois(', environ['REMOTE_ADDR'], ') ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
             pass
 
         if name is not None and (name.domain_name is not None or name.org is not None):
@@ -254,7 +256,7 @@ def whois_cache(conn, environ):
                 obj = IPWhois(environ['REMOTE_ADDR'])
                 res = obj.lookup_whois()
             except Exception as e:
-                print('ERROR: ', IPWhois(environ['REMOTE_ADDR']), ' ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
+                print('ERROR: IPWhois(', environ['REMOTE_ADDR'], ') ', str(e), sep=' ', end='', file=environ["wsgi.errors"])
                 pass
 
             if res is not None:
@@ -264,7 +266,7 @@ def whois_cache(conn, environ):
                 conn.commit()
 
 
-def insertReport(conn, report, stackId, fn, environ):
+def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
     i = (report['time'], 
         report['sessionInfo']['userName'] if 'userName' in report['sessionInfo'] else "", 
         report['clientInfo']['appVersion'], 
@@ -286,6 +288,12 @@ def insertReport(conn, report, stackId, fn, environ):
     cur = conn.cursor()
     cur.execute("insert into report values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", i)
     cur.close()
+
+    if not report['configInfo']['changeEnabled'] and changeEnables != 0:
+        cur = conn.cursor()
+        cur.execute("update issue set changeEnabled=0 where issueId=(?)", issueId)
+        cur.close()
+
 
 
 def inStopLists(environ):
@@ -365,6 +373,10 @@ def errorInConf(errors, stack, environ):
             print("e10:", errors[0][0], file=environ["wsgi.errors"])
             return False
 
+        if errors[0][0].startswith('{mngbase'):
+            print("e11:", errors[0][0], file=environ["wsgi.errors"])
+            return False
+
         if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
@@ -390,11 +402,9 @@ def errorInConf(errors, stack, environ):
                     print("e2:", e, file=environ["wsgi.errors"])
                     return False
 
-                dot2 = e.find('.', dot+1)
-                if dot2 != -1:
-                    if e.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
-                        print("e3:", e, file=environ["wsgi.errors"])
-                        return False
+                if e.find('_', dot+1) != -1:    # в имени объекта метаданных в тч в тексте ошибки есть подчеркивание, значит объект нетиповой или в тексте ошибки есть упоминание нетипового объекта
+                    print("e3:", e, file=environ["wsgi.errors"])
+                    return False
     except:
         print(str(errors), file=environ["wsgi.errors"])
         raise
@@ -414,11 +424,10 @@ def errorInConf(errors, stack, environ):
                     print("s5:", s, file=environ["wsgi.errors"])
                     return False
 
-                dot2 = s.find('.', dot+1)
-                if dot2 != -1:
-                    if s.find('_', dot+1, dot2) != -1:    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой
-                        print("s6:", s, file=environ["wsgi.errors"])
-                        return False
+                pod = s.find('_', dot+1)
+                if pod != -1 and not(len(s) > pod+11 and s[pod:pod+11] == "__ОТЛАДКА__"):    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой, но в модуле __ОТЛАДКА__ ловим ошибку
+                    print("s6:", s, file=environ["wsgi.errors"])
+                    return False
     except:
         print(str(stack), file=environ["wsgi.errors"])
         raise
@@ -551,7 +560,12 @@ def clear(conn, output, delete):
         print("<p>Остается ошибок: ", len(issueIds), ", отчетов: ", str(totalReportsCount-reportsCount), "</p>", sep='', file=output)
 
     if delete:
-       conn.commit()
+        # удаляем записи whois, которые больше не встречаются в reports 
+        cur = conn.cursor()
+        cur.execute("delete from whois where ip not in (select distinct REMOTE_ADDR from report)")
+        cur.close()
+
+        conn.commit()
 
 
 def application(environ, start_response):
@@ -595,6 +609,9 @@ table {
 }
 .marked {
     background-color: rgb(190,255,255);
+}
+.original_conf {
+    background-color: rgb(255,135,135);
 }
 .settings_table {
     width: 50%;
@@ -660,6 +677,12 @@ function selectConfig(configName) {
     else
         document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
 }
+function selectNetwork(network) {
+    if (network != '')
+        document.location.href="''', prefs.SITE_URL, '''/s/errorsList/"+network.replace(/\//g, "&frasl;")
+    else
+        document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
+}
 ''', sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -704,7 +727,7 @@ function selectConfig(configName) {
         fzip = read(environ)
         report = readReport(fzip.name, environ)
 
-        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешнх объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
+        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешних объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
         full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
         in_stop = inStopLists(environ)
         in_conf = None
@@ -729,7 +752,7 @@ function selectConfig(configName) {
             errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
             cur = conn.cursor()
-            cur.execute("select rowid from issue where errors=?", (errors,))
+            cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
             issue = cur.fetchone()
             cur.close()
 
@@ -745,12 +768,14 @@ function selectConfig(configName) {
                 cur.close()
 
                 cur = conn.cursor()
-                cur.execute("select issueId from issue where errors=?", (errors,))
-                issue = cur.fetchone()[0]
+                cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
+                row = cur.fetchone()
+                issue = row[0]
+                changeEnabled = row[1]
                 cur.close()
 
                 stack = insertReportStack(conn, report, issue)
-                insertReport(conn, report, stack, fn, environ)
+                insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
                 needStoreReport = True
 
                 if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and report['configInfo']['name'] in prefs.CONFIGS and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
@@ -759,6 +784,7 @@ function selectConfig(configName) {
                     needSendMail = True
                     cur.close()
             else:
+                changeEnabled = issue[1]
                 issue = issue[0]
 
                 cur = conn.cursor()
@@ -801,11 +827,11 @@ function selectConfig(configName) {
                         cur.close()
                     else:
                         stack = insertReportStack(conn, report, issue)
-                        insertReport(conn, report, stack, fn, environ)
+                        insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
                         needStoreReport = True
                 else:
                     stack = insertReportStack(conn, report, issue)
-                    insertReport(conn, report, stack, fn, environ)
+                    insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
                     needStoreReport = True
 
             conn.commit()
@@ -852,6 +878,35 @@ function selectConfig(configName) {
         print("<ul><li class='refli'><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></lu>", sep='', file=output)
         print("<li class='refli'><a href='", prefs.SITE_URL, "/s/clear'>Удаление отчетов неподдерживаемых версий и конфигураций, ошибок от IP из черного списка</a></li>", sep='', file=output)
         print("</ul></body></html>", sep='', end='', file=output)
+
+        ret = output.getvalue().encode('UTF-8')
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(ret)))
+        ])
+        return [ret]
+
+    if environ['PATH_INFO'] == '/s/whois':
+        output = StringIO()
+        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
+        print("<meta charset='utf-8'>", sep='', file=output)
+        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
+        print("<title>Данные Whois по адресам ошибок</title>", sep='', file=output)
+        print("</head><body><h2>Данные Whois по адресам ошибок</h2>", sep='', file=output)
+
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        cur = conn.cursor()
+        cur.execute("select name, org, min(time) from whois group by name, org")
+        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 20%'>FQDN или сеть</th><th style='width: 60%'>Описание</th><th>Первое обращение</th>", sep='', file=output)
+        for r in cur.fetchall():
+            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td></tr>", sep='', file=output)
+        cur.close()
+        print("</table>", file=output)
+        conn.close()
+
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
+        print("</body></html>", sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
         start_response('200 OK', [
@@ -969,43 +1024,64 @@ function selectConfig(configName) {
         ])
         return [ret]
 
-    if len(url) in [2,3] and url[1] == 'errorsList' and (len(url) == 2 or url[2].isdigit()):
+    try:
+        url2_is_d = url[2].isdigit()
+        network = url[2].replace("&frasl;", "/")
+        conf_number = int(url[2])
+    except:
+        pass
+    if len(url) > 1 and url[1] == 'errorsList' and (len(url) == 2 or (len(url) == 3 and not url2_is_d) or (len(url) == 3 and url2_is_d and conf_number < len(CONFIG_NAMES))):
         output = StringIO()
         print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
 <title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
-</head><body><H2>Список ошибок сервиса регистрации ошибок</H2>''', sep='', file=output)
+</head><body><H2>Список ошибок сервиса регистрации ошибок</H2>
+<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке</br>
+<span class='marked'>Бирюзовый фон</span> - есть отметка</p></small>
+''', sep='', file=output)
 
         if secret:
-            print("<br><p>Фильтр на конфигурацию: <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
-            if len(url) == 2:
+            print("<br><p>Фильтры на: конфигурацию - <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
+
+            if len(url) == 2 or len(url) == 3 and not url2_is_d:
                 print("<option value='sn' selected/>", sep='', file=output)
             else:
                 print("<option value='sn'/>", sep='', file=output)
-            for i in range(len(CONFIG_NAMES)):
-                if len(url) == 3 and i == int(url[2]):
-                    print("<option value='s", i, "' selected>", CONFIG_NAMES[i], "</option>", sep='', file=output)
-                else:
+            if len(url) == 3 and url2_is_d:
+                for i in range(len(CONFIG_NAMES)):
+                    if i == conf_number:
+                        print("<option value='s", i, "' selected>", CONFIG_NAMES[i], "</option>", sep='', file=output)
+                    else:
+                        print("<option value='s", i, "'>", CONFIG_NAMES[i], "</option>", sep='', file=output)
+            else:
+                for i in range(len(CONFIG_NAMES)):
                     print("<option value='s", i, "'>", CONFIG_NAMES[i], "</option>", sep='', file=output)
-            print("</select></p>", sep='', file=output)
+            print("</select> &nbsp;&nbsp;&nbsp;", sep='', file=output)
+            if len(url) == 3 and not url2_is_d:
+                print("клиентский FQDN/сеть - <input type='text' size='30' name='network' value='", network, "'onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
+            else:
+                print("клиентский FQDN/сеть - <input type='text' size='30' name='network' onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
+        elif url2_is_d:
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where configName='"+CONFIG_NAMES[conf_number]+"' order by issue.issueId desc, issue.issueId desc"
         else:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time from issue inner join reportStack where reportStack.issueId=issue.issueId and configName='"+CONFIG_NAMES[int(url[2])]+"' order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = "select distinct issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId inner join report on reportStackId=StackId inner join whois on REMOTE_ADDR=ip where whois.name='"+network+"' order by issue.issueId desc, issue.issueId desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
         cur.close()
         conn.close()
 
-        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
-<p><a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
+        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></br>
+<a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
+<a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
 </body></html>''', sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
@@ -1053,7 +1129,7 @@ function selectConfig(configName) {
         conn.execute("PRAGMA foreign_keys=OFF;")
 
         cur = conn.cursor()
-        SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId=?"
+        SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack where reportStack.issueId=issue.issueId and issue.issueId=?"
         cur.execute(SQLPacket, (url[2],))
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
