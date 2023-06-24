@@ -36,7 +36,7 @@ def read(environ):
     stream = environ['wsgi.input']
     body = tempfile.NamedTemporaryFile(mode='w+b')
     while length > 0:
-        part = stream.read(min(length, 1024*500)) # 500KB buffer size
+        part = stream.read(min(length, 1024*800)) # 800KB buffer size
         if not part: break
         body.write(part)
         length -= len(part)
@@ -1064,9 +1064,9 @@ function selectNetwork(network) {
                     print("<option value='s", i, "'>", CONFIG_NAMES[i], "</option>", sep='', file=output)
             print("</select> &nbsp;&nbsp;&nbsp;", sep='', file=output)
             if len(url) == 3 and not url2_is_d:
-                print("клиентский FQDN/сеть - <input type='text' size='30' name='network' value='", network, "'onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
+                print("клиентский FQDN/сеть - <input id='network' autocomplete='on' type='text' size='30' name='network' value='", network, "'onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
             else:
-                print("клиентский FQDN/сеть - <input type='text' size='30' name='network' onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
+                print("клиентский FQDN/сеть - <input id='network' autocomplete='on' type='text' size='30' name='network' onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
@@ -1074,9 +1074,9 @@ function selectNetwork(network) {
         if len(url) == 2:
             SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
         elif url2_is_d:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where configName='"+CONFIG_NAMES[conf_number]+"' order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in (select distinct issueId from reportStack where configName='"+CONFIG_NAMES[conf_number]+"') order by issue.issueId desc, issue.issueId desc"
         else:
-            SQLPacket = "select distinct issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId inner join report on reportStackId=StackId inner join whois on REMOTE_ADDR=ip where whois.name='"+network+"' order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='"+network+"') order by issue.issueId desc, issue.issueId desc"
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
@@ -1138,7 +1138,7 @@ function selectNetwork(network) {
         stackId = prepareErrorTable(cur, output, secret, url[2])
         cur.close()
 
-        print('''<br><h3>Отчеты</h3><table width='100%' border=1><tr>
+        print('''<h3>Отчеты</h3><table width='100%' border=1><tr>
 <th>Дата</th>
 <th>Хеш стека/ID клиента</th>
 <th>IP адрес</th>
@@ -1182,8 +1182,9 @@ function selectNetwork(network) {
         conn.close()
         print("</table>", sep='', file=output)
 
-        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></p>
-<p><a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
+        print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a><br>
+<a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
+<a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
