@@ -67,7 +67,9 @@ def array2str(arrs, sql):
 
 def prepareErrorTableLine(r, output, secret, issueN):
     print("<tr", sep='', end='', file=output)
-    if len(r[5]) != 0:
+    if len(r[5]) != 0 and r[10] is not None:
+        print(" class='marked original_conf'", sep='', end='', file=output)
+    elif len(r[5]) != 0:
         print(" class='marked'", sep='', end='', file=output)
     elif r[10] is not None:
         print(" class='original_conf'", sep='', end='', file=output)
@@ -612,7 +614,7 @@ table {
     font-family: Verdana, Tahoma, Arial, sans-serif;
 }
 .marked {
-    background-color: rgb(190,255,255);
+    background-color: rgb(190,255,255) !important;
 }
 .original_conf {
     background-color: rgb(255,135,135);
