@@ -293,7 +293,7 @@ def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
 
     if not report['configInfo']['changeEnabled'] and changeEnabled != 0:
         cur = conn.cursor()
-        cur.execute("update issue set changeEnabled=0 where issueId=(?)", issueId)
+        cur.execute("update issue set changeEnabled=0 where issueId=(?)", issue)
         cur.close()
 
 
@@ -918,25 +918,25 @@ function selectNetwork(network) {
         print("<meta charset='utf-8'>", sep='', file=output)
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
         print("<title>Пользователи конфигураций</title>", sep='', file=output)
-        print("</head><body><h2>Пользователи конфигураций</h2>", sep='', file=output)
+        print("</head><body><h2>Пользователи конфигураций, отправившие отчеты об ошибках</h2>", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         print("<h3>Пользователи скрыты</h3>", sep='', file=output)
         cur = conn.cursor()
         cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID='00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
-        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 50%'>Описание</th><th style='width: 50%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
+        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
         for r in cur.fetchall():
-            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td>",r[3],"</td><td></td></tr>", sep='', file=output)
+            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'></td></tr>", sep='', file=output)
         cur.close()
         print("</table>", file=output)
 
         print("<h3>С пользователями</h3>", sep='', file=output)
         cur = conn.cursor()
         cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID<>'00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
-        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 50%'>Описание</th><th style='width: 50%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
+        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
         for r in cur.fetchall():
-            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td>",r[3],"</td><td>",r[4],"</td></tr>", sep='', file=output)
+            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
         cur.close()
         print("</table>", file=output)
         conn.close()
