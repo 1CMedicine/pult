@@ -77,6 +77,14 @@ cur.execute("""create table if not exists whois (
     UNIQUE(ip)
 );""")
 
+cur.execute("""create table if not exists clients (
+    clientID TEXT NOT NULL,
+    configName TEXT NOT NULL,
+    configVersion TEXT NOT NULL,
+    REMOTE_ADDR TEXT NOT NULL,
+    UNIQUE(clientID, configName, configVersion)
+);""")
+
 cur.execute("CREATE INDEX IF NOT EXISTS report_reportstack_index ON report (reportStackId);")
 cur.execute("CREATE INDEX IF NOT EXISTS reportStack_issue_index ON reportStack (issueId);")
 conn.commit()

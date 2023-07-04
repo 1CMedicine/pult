@@ -36,7 +36,7 @@ def read(environ):
     stream = environ['wsgi.input']
     body = tempfile.NamedTemporaryFile(mode='w+b')
     while length > 0:
-        part = stream.read(min(length, 1024*800)) # 800KB buffer size
+        part = stream.read(min(length, 1024*1024*10)) # 10MB buffer size
         if not part: break
         body.write(part)
         length -= len(part)
@@ -713,10 +713,7 @@ function selectNetwork(network) {
                 if 'test' in query:
                     needSendReport = True
                 elif query['configName'] in prefs.CONFIGS:
-                    for ver in prefs.CONFIGS[query['configName']][0]:
-                        if ver == query['configVersion'][:len(ver)]:
-                            needSendReport = True
-                            break
+                    needSendReport = True
 
         if needSendReport:
             ret = '{"needSendReport":true,"userMessage":"Рекомендуем сформировать и отправить отчет разработчикам 1С:Медицина. При необходимости получения обратной связи свяжитесь с линией консультации по адресу med@1c.ru"}'.encode('UTF-8')
@@ -733,125 +730,147 @@ function selectNetwork(network) {
         fzip = read(environ)
         report = readReport(fzip.name, environ)
 
-        #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешних объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
-        full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
-        in_stop = inStopLists(environ)
-        in_conf = None
-        platform = None
-        if full_data and not in_stop:
-            in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], report['errorInfo']['applicationErrorInfo']['stack'], environ)
-            if in_conf:
-                platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
-        if full_data and not in_stop and in_conf and not platform:
-            conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
-            conn.execute("PRAGMA foreign_keys=ON;")
-            cur = conn.cursor()
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        needStoreReport = False
+        if 'configInfo' in report and report['configInfo']['name'] in prefs.CONFIGS:
 
-            prev_issue = None
-            te = StringIO()
-            array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
-
-            # схлапываем те строки, которые размножают одну ошибку в отчетах
-            errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
-
-            # убираем непечатные символы, русский берем из http://www.fileformat.info/info/unicode/category/index.htm
-            errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
-
-            cur = conn.cursor()
-            cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
-            issue = cur.fetchone()
-            cur.close()
-
-            fn = str(uuid.uuid4())+".zip"
-            needSendMail = False
-            needStoreReport = False
-            time = report['time'][:10]
-            if prefs.USE_WHOIS:
-                whois_cache(conn, environ)
-            if issue is None:
+            try:
                 cur = conn.cursor()
-                cur.execute("insert into issue (errors, time) values (?,?)", (errors, time))
+                cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                cnt = cur.fetchone()[0]
                 cur.close()
+
+                if cnt == 0:
+                    cur = conn.cursor()
+                    cur.execute("insert into clients values (?,?,?,?)", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], environ['REMOTE_ADDR']))
+                    cur.close()
+
+            except Exception as e:
+                print(repr(e), file=environ["wsgi.errors"])
+                raise
+
+            for ver in prefs.CONFIGS[report['configInfo']['name']][0]:
+                if ver == report['configInfo']['version'][:len(ver)]:
+                    needStoreReport = True
+                    break
+
+        if needStoreReport:
+            #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешних объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
+            full_data = ('stackHash' in report['errorInfo']['applicationErrorInfo'] and 'errors' in report['errorInfo']['applicationErrorInfo'] and 'configInfo' in report)
+            in_stop = inStopLists(environ)
+            in_conf = None
+            platform = None
+            if full_data and not in_stop:
+                in_conf = not prefs.ONLY_IN_CONF or errorInConf(report['errorInfo']['applicationErrorInfo']['errors'], report['errorInfo']['applicationErrorInfo']['stack'], environ)
+                if in_conf:
+                    platform = platformError(report['errorInfo']['applicationErrorInfo']['errors'], environ)
+            if full_data and not in_stop and in_conf and not platform:
+                prev_issue = None
+                te = StringIO()
+                array2str(report['errorInfo']['applicationErrorInfo']['errors'], te)
+
+                # схлапываем те строки, которые размножают одну ошибку в отчетах
+                errors = re.sub(r"&apos;file://.*?&apos;", r"file://[path]", te.getvalue())
+
+                # убираем непечатные символы, русский берем из http://www.fileformat.info/info/unicode/category/index.htm
+                errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
                 cur = conn.cursor()
                 cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
-                row = cur.fetchone()
-                issue = row[0]
-                changeEnabled = row[1]
+                issue = cur.fetchone()
                 cur.close()
 
-                stack = insertReportStack(conn, report, issue)
-                insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
-                needStoreReport = True
-
-                if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and report['configInfo']['name'] in prefs.CONFIGS and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                fn = str(uuid.uuid4())+".zip"
+                needSendMail = False
+                needStoreReport = False
+                time = report['time'][:10]
+                if prefs.USE_WHOIS:
+                    whois_cache(conn, environ)
+                if issue is None:
                     cur = conn.cursor()
-                    cur.execute("insert into smtpQueue values (?)", (issue,))
-                    needSendMail = True
+                    cur.execute("insert into issue (errors, time) values (?,?)", (errors, time))
                     cur.close()
-            else:
-                changeEnabled = issue[1]
-                issue = issue[0]
 
-                cur = conn.cursor()
-                cur.execute("update issue set time=? where issueId=?", (time, issue))
-                cur.close()
+                    cur = conn.cursor()
+                    cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
+                    row = cur.fetchone()
+                    issue = row[0]
+                    changeEnabled = row[1]
+                    cur.close()
 
-                prev_reports = None
-                if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
-                    i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
-                    prev_reports = None
-                    if 'screenshot' in report and report['screenshot'] is not None:
-                        cur = conn.cursor()
-                        # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
-                        prev_reports = cur.fetchone()
-                        cur.close()
-                    else:
-                        cur = conn.cursor()
-                        # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                        cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
-                        prev_reports = cur.fetchone()
-                        cur.close()
-
-                    if prev_reports is not None:
-                        descTime = report['time'][0:10]+" "+report['time'][11:]
-                        if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
-                        elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                            SQLPacket += "<span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
-                        elif prev_reports[2] is not None: 
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>'"
-                        else:
-                            SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+descTime+"</span>'"
-                        SQLPacket += " where rowid="+str(prev_reports[0])
-
-                        cur = conn.cursor()
-                        cur.execute(SQLPacket)
-                        cur.close()
-                    else:
-                        stack = insertReportStack(conn, report, issue)
-                        insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
-                        needStoreReport = True
-                else:
                     stack = insertReportStack(conn, report, issue)
                     insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
                     needStoreReport = True
 
-            conn.commit()
-            conn.close()
-            if needSendMail:
-                Thread(target=send_mail, args=()).start()
+                    if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                        cur = conn.cursor()
+                        cur.execute("insert into smtpQueue values (?)", (issue,))
+                        needSendMail = True
+                        cur.close()
+                else:
+                    changeEnabled = issue[1]
+                    issue = issue[0]
 
-            if needStoreReport:
-                shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
+                    cur = conn.cursor()
+                    cur.execute("update issue set time=? where issueId=?", (time, issue))
+                    cur.close()
 
-        else:
-            t = StringIO()
-            print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
+                    prev_reports = None
+                    if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
+                        i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
+                        prev_reports = None
+                        if 'screenshot' in report and report['screenshot'] is not None:
+                            cur = conn.cursor()
+                            # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                            cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
+                            prev_reports = cur.fetchone()
+                            cur.close()
+                        else:
+                            cur = conn.cursor()
+                            # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                            cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
+                            prev_reports = cur.fetchone()
+                            cur.close()
 
+                        if prev_reports is not None:
+                            descTime = report['time'][0:10]+" "+report['time'][11:]
+                            if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
+                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                                SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                            elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
+                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                                SQLPacket += "<span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                            elif prev_reports[2] is not None: 
+                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>'"
+                            else:
+                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+descTime+"</span>'"
+                            SQLPacket += " where rowid="+str(prev_reports[0])
+
+                            cur = conn.cursor()
+                            cur.execute(SQLPacket)
+                            cur.close()
+                        else:
+                            stack = insertReportStack(conn, report, issue)
+                            insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
+                            needStoreReport = True
+                    else:
+                        stack = insertReportStack(conn, report, issue)
+                        insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
+                        needStoreReport = True
+
+                conn.commit()
+                if needSendMail:
+                    Thread(target=send_mail, args=()).start()
+
+                if needStoreReport:
+                    shutil.copy(fzip.name, prefs.DATA_PATH+"/"+fn)
+
+            else:
+                t = StringIO()
+                print("report filtered: stopList - ", in_stop, ", full_data - ", full_data, ", in_conf - ", in_conf, ", platform - ", platform, sep='', end='', file=environ["wsgi.errors"])
+
+        conn.close()
         start_response('200 OK', [
             ('Content-Type', 'application/json; charset=utf-8'),
             ('Content-Length', '0')
@@ -892,6 +911,47 @@ function selectNetwork(network) {
         ])
         return [ret]
 
+
+    if environ['PATH_INFO'] == '/s/clients':
+        output = StringIO()
+        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
+        print("<meta charset='utf-8'>", sep='', file=output)
+        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
+        print("<title>Пользователи конфигураций</title>", sep='', file=output)
+        print("</head><body><h2>Пользователи конфигураций</h2>", sep='', file=output)
+
+        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        print("<h3>Пользователи скрыты</h3>", sep='', file=output)
+        cur = conn.cursor()
+        cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID='00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
+        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 50%'>Описание</th><th style='width: 50%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
+        for r in cur.fetchall():
+            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td>",r[3],"</td><td></td></tr>", sep='', file=output)
+        cur.close()
+        print("</table>", file=output)
+
+        print("<h3>С пользователями</h3>", sep='', file=output)
+        cur = conn.cursor()
+        cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID<>'00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
+        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 50%'>Описание</th><th style='width: 50%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
+        for r in cur.fetchall():
+            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td>",r[3],"</td><td>",r[4],"</td></tr>", sep='', file=output)
+        cur.close()
+        print("</table>", file=output)
+        conn.close()
+
+        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
+        print("</body></html>", sep='', end='', file=output)
+
+        ret = output.getvalue().encode('UTF-8')
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(ret)))
+        ])
+        return [ret]
+
+
     if environ['PATH_INFO'] == '/s/whois':
         output = StringIO()
         print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
@@ -920,7 +980,6 @@ function selectNetwork(network) {
             ('Content-Length', str(len(ret)))
         ])
         return [ret]
-
 
     if environ['PATH_INFO'] == '/s/clear':
         output = StringIO()
@@ -1087,6 +1146,7 @@ function selectNetwork(network) {
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></br>
 <a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
+<a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
 </body></html>''', sep='', end='', file=output)
 
@@ -1186,6 +1246,7 @@ function selectNetwork(network) {
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a><br>
 <a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
+<a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
 
