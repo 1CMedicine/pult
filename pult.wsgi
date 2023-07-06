@@ -293,7 +293,7 @@ def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
 
     if not report['configInfo']['changeEnabled'] and changeEnabled != 0:
         cur = conn.cursor()
-        cur.execute("update issue set changeEnabled=0 where issueId=(?)", issue)
+        cur.execute("update issue set changeEnabled=0 where issueId=(?)", (issue,))
         cur.close()
 
 
