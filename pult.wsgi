@@ -745,6 +745,7 @@ function selectNetwork(network) {
                     cur = conn.cursor()
                     cur.execute("insert into clients values (?,?,?,?)", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], environ['REMOTE_ADDR']))
                     cur.close()
+                    conn.commit()
 
             except Exception as e:
                 print(repr(e), file=environ["wsgi.errors"])
