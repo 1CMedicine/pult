@@ -565,12 +565,6 @@ def clear(conn, output, delete):
         print("<p>Удаляется ошибок: ", errorsCount, ", отчетов: ", reportsCount, "</p>", sep='', file=output)
         print("<p>Остается ошибок: ", len(issueIds), ", отчетов: ", str(totalReportsCount-reportsCount), "</p>", sep='', file=output)
 
-    if delete:
-        # удаляем записи whois, которые больше не встречаются в reports 
-        cur = conn.cursor()
-        cur.execute("delete from whois where ip not in (select distinct REMOTE_ADDR from report)")
-        cur.close()
-
         conn.commit()
 
 
@@ -945,35 +939,6 @@ function selectNetwork(network) {
         return [ret]
 
 
-    if environ['PATH_INFO'] == '/s/whois':
-        output = StringIO()
-        print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
-        print("<meta charset='utf-8'>", sep='', file=output)
-        print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
-        print("<title>Данные Whois по адресам ошибок</title>", sep='', file=output)
-        print("</head><body><h2>Данные Whois по адресам ошибок</h2>", sep='', file=output)
-
-        conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
-        conn.execute("PRAGMA foreign_keys=ON;")
-        cur = conn.cursor()
-        cur.execute("select name, org, min(time) from whois group by name, org")
-        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 20%'>FQDN или сеть</th><th style='width: 60%'>Описание</th><th>Первое обращение</th>", sep='', file=output)
-        for r in cur.fetchall():
-            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td></tr>", sep='', file=output)
-        cur.close()
-        print("</table>", file=output)
-        conn.close()
-
-        print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
-        print("</body></html>", sep='', end='', file=output)
-
-        ret = output.getvalue().encode('UTF-8')
-        start_response('200 OK', [
-            ('Content-Type', 'text/html; charset=utf-8'),
-            ('Content-Length', str(len(ret)))
-        ])
-        return [ret]
-
     if environ['PATH_INFO'] == '/s/clear':
         output = StringIO()
         print('<!DOCTYPE html><html><head>', sep='', end='', file=output)
@@ -1138,7 +1103,6 @@ function selectNetwork(network) {
         conn.close()
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></br>
-<a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
 <a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
 </body></html>''', sep='', end='', file=output)
@@ -1238,7 +1202,6 @@ function selectNetwork(network) {
         print("</table>", sep='', file=output)
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a><br>
-<a href="''', prefs.SITE_URL, '''/s/whois">Полный список данных whois сервиса</a></br>
 <a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, "/s" if secret else "", '''/errorsList">Список ошибок</a></p>''', sep='', file=output)
         print("</body></html>", sep='', file=output)
