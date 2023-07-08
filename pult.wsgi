@@ -746,6 +746,8 @@ function selectNetwork(network) {
                     cur.execute("insert into clients values (?,?,?,?)", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], environ['REMOTE_ADDR']))
                     cur.close()
                     conn.commit()
+                    if prefs.USE_WHOIS:
+                        whois_cache(conn, environ)
 
             except Exception as e:
                 print(repr(e), file=environ["wsgi.errors"])
@@ -923,21 +925,11 @@ function selectNetwork(network) {
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
-        print("<h3>Пользователи скрыты</h3>", sep='', file=output)
         cur = conn.cursor()
-        cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID='00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
+        cur.execute("select name, org, configName, configVersion, count(clientID),min(REMOTE_ADDR) from clients left join whois on ip=REMOTE_ADDR group by configName, configVersion, name, org")
         print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
         for r in cur.fetchall():
-            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'></td></tr>", sep='', file=output)
-        cur.close()
-        print("</table>", file=output)
-
-        print("<h3>С пользователями</h3>", sep='', file=output)
-        cur = conn.cursor()
-        cur.execute("select name, org, configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR where clientID<>'00000000-0000-0000-0000-000000000000' group by configName, configVersion, name, org")
-        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
-        for r in cur.fetchall():
-            print("<tr><td>",r[0],"</td><td>",r[1],"</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
+            print("<tr><td>",r[0] if r[0] is not None else r[5],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
         cur.close()
         print("</table>", file=output)
         conn.close()
