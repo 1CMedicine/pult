@@ -974,6 +974,8 @@ function selectNetwork(network) {
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         clear(conn, output, True)
+        conn.commit()
+        conn.execute("VACUUM")
         conn.close()
 
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
