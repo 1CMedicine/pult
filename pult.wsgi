@@ -1068,7 +1068,8 @@ function selectNetwork(network) {
 <title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
 </head><body><H2>Список ошибок сервиса регистрации ошибок</H2>
 <p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
-<span class='marked'>Бирюзовый фон</span> - есть отметка</small></p>
+<span class='marked'>Бирюзовый фон</span> - есть отметка<br>
+Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small></p>
 ''', sep='', file=output)
 
         if secret:
@@ -1097,11 +1098,22 @@ function selectNetwork(network) {
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId order by issue.time desc, issue.issueId desc"
+            SQLPacket = """select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled 
+		from issue 
+		inner join reportStack on reportStack.issueId=issue.issueId 
+		order by issue.time desc, issue.issueId desc"""
         elif url2_is_d:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in (select distinct issueId from reportStack where configName='"+CONFIG_NAMES[conf_number]+"') order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled 
+		from issue 
+		inner join reportStack on reportStack.issueId=issue.issueId 
+		where issue.issueId in (select distinct issueId from reportStack where configName='{CONFIG_NAMES[conf_number]}') 
+		order by issue.time desc, issue.issueId desc"""
         else:
-            SQLPacket = "select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled from issue inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='"+network+"') order by issue.issueId desc, issue.issueId desc"
+            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled 
+		from issue 
+		inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in 
+		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}') 
+		order by issue.time desc, issue.issueId desc"""
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
