@@ -383,6 +383,10 @@ def errorInConf(errors, stack, environ):
             print("e11:", errors[0][0], file=environ["wsgi.errors"])
             return False
 
+        if errors[-1][0].startswith('Не удалось заблокировать таблицу'):
+            print("e12:", errors[-1][0], file=environ["wsgi.errors"])
+            return False
+
         if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
