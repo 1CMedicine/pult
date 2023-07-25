@@ -415,14 +415,15 @@ def errorInConf(errors, stack, environ):
                 if e.find('_', dot+1) != -1:    # в имени объекта метаданных в тч в тексте ошибки есть подчеркивание, значит объект нетиповой или в тексте ошибки есть упоминание нетипового объекта
                     print("e3:", e, file=environ["wsgi.errors"])
                     return False
+
     except:
         print(str(errors), file=environ["wsgi.errors"])
         raise
 
     # Вызов из объекта пользователя
     try:
-        if stack[0][0].startswith('ВнешняяОбработка.') or stack[0][0].startswith('ВнешнийОтчет.'):
-            print("s4:", stack[0][0], file=environ["wsgi.errors"])
+        if stack[0][0].startswith('Справочник.ДополнительныеОтчетыИОбработки.'):
+            print("s8:", stack[0][0], file=environ["wsgi.errors"])
             return False
 
         for s1 in stack:
@@ -438,6 +439,15 @@ def errorInConf(errors, stack, environ):
                 if pod != -1 and not(len(s) > pod+11 and s[pod:pod+11] == "__ОТЛАДКА__"):    # в имени объекта метаданных есть подчеркивание, значит объект нетиповой, но в модуле __ОТЛАДКА__ ловим ошибку
                     print("s6:", s, file=environ["wsgi.errors"])
                     return False
+
+            if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
+                print("s4:", s, file=environ["wsgi.errors"])
+                return False
+
+            if s1[-1].find('ВнешняяОбработка') != -1:
+                print("s7:", s1[-1], file=environ["wsgi.errors"])
+                return False
+
     except:
         print(str(stack), file=environ["wsgi.errors"])
         raise
