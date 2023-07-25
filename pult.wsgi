@@ -422,10 +422,6 @@ def errorInConf(errors, stack, environ):
 
     # Вызов из объекта пользователя
     try:
-        if stack[0][0].startswith('Справочник.ДополнительныеОтчетыИОбработки.'):
-            print("s8:", stack[0][0], file=environ["wsgi.errors"])
-            return False
-
         for s1 in stack:
             s = s1[0]
             dot = s.find('.')
@@ -440,11 +436,11 @@ def errorInConf(errors, stack, environ):
                     print("s6:", s, file=environ["wsgi.errors"])
                     return False
 
-            if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.'):
+            if s.startswith('ВнешняяОбработка.') or s.startswith('ВнешнийОтчет.') or s.startswith('Справочник.ДополнительныеОтчетыИОбработки.') or s.startswith('ОбщийМодуль.ДополнительныеОтчетыИОбработки.'):
                 print("s4:", s, file=environ["wsgi.errors"])
                 return False
 
-            if s1[-1].find('ВнешняяОбработка') != -1:
+            if s1[-1].find('ВнешняяОбработка') != -1 or s1[-1].find('ВнешнийОбъект') != -1:
                 print("s7:", s1[-1], file=environ["wsgi.errors"])
                 return False
 
