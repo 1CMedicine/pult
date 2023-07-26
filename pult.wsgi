@@ -927,6 +927,8 @@ function selectNetwork(network) {
         print("<title>Пользователи конфигураций</title>", sep='', file=output)
         print("</head><body><h2>Пользователи конфигураций, отправившие отчеты об ошибках</h2>", sep='', file=output)
 
+        arms = 0
+        clients = 0
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         cur = conn.cursor()
@@ -934,9 +936,14 @@ function selectNetwork(network) {
         print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
         for r in cur.fetchall():
             print("<tr><td>",r[0] if r[0] is not None else r[5],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
+            clients += 1
+            arms += r[4]
         cur.close()
         print("</table>", file=output)
         conn.close()
+
+        print('<p>Клиентов (сетей) - ', clients, sep='', end='<br>', file=output)
+        print('АРМов - ', arms, sep='', file=output)
 
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
         print("</body></html>", sep='', end='', file=output)
