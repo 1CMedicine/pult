@@ -31,12 +31,11 @@ for name in prefs.CONFIGS:
     CONFIG_NAMES.append(name)
 
 
-def read(environ):
-    length = int(environ.get('CONTENT_LENGTH', 0))
+def read(environ, length):
     stream = environ['wsgi.input']
     body = tempfile.NamedTemporaryFile(mode='w+b')
     while length > 0:
-        part = stream.read(min(length, 1024*1024*10)) # 10MB buffer size
+        part = stream.read(min(length, 1024*200)) # 200KB buffer size
         if not part: break
         body.write(part)
         length -= len(part)
@@ -250,7 +249,10 @@ def whois_cache(conn, environ):
 
         if name is not None and (name.domain_name is not None or name.org is not None):
             cur = conn.cursor()
-            cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], name.domain_name, name.org, datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+            try:
+                cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], name.domain_name, name.org, datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+            except sqlite3.IntegrityError as e:
+                pass
             cur.close()
             conn.commit()
         else:
@@ -263,7 +265,10 @@ def whois_cache(conn, environ):
 
             if res is not None:
                 cur = conn.cursor()
-                cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], res['asn_cidr'], res['asn_description'], datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+                try:
+                    cur.execute("insert into whois values (?,?,?,?)", (environ['REMOTE_ADDR'], res['asn_cidr'], res['asn_description'], datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
+                except sqlite3.IntegrityError as e:
+                    pass
                 cur.close()
                 conn.commit()
 
@@ -705,19 +710,17 @@ function selectNetwork(network) {
 
     if environ['PATH_INFO'] == '/getInfo':
         needSendReport = False
-        if not inStopLists(environ):
-            try:
-                length = int(environ.get('CONTENT_LENGTH', '0'))
-            except (ValueError):
-                length = 0
-            body = environ['wsgi.input'].read(length).decode('utf-8')
-            if len(body) > 1:
-                query = json.loads(body)
-                output = StringIO()
-                if 'test' in query:
-                    needSendReport = True
-                elif query['configName'] in prefs.CONFIGS:
-                    needSendReport = True
+        length = int(environ.get('CONTENT_LENGTH', '0'))
+        if length > 10000:   # 10 kb limit
+            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
+        body = environ['wsgi.input'].read(length).decode('utf-8')
+        if len(body) > 1:
+            query = json.loads(body)
+            output = StringIO()
+            if 'test' in query:
+                needSendReport = True
+            elif query['configName'] in prefs.CONFIGS:
+                needSendReport = True
 
         if needSendReport:
             ret = '{"needSendReport":true,"userMessage":"Рекомендуем сформировать и отправить отчет разработчикам 1С:Медицина. При необходимости получения обратной связи свяжитесь с линией консультации по адресу med@1c.ru"}'.encode('UTF-8')
@@ -731,14 +734,16 @@ function selectNetwork(network) {
 
 
     if environ['PATH_INFO'] == '/pushReport':
-        fzip = read(environ)
+        length = int(environ.get('CONTENT_LENGTH', 0))
+        if length > 10000000:   # 10 mb limit
+            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
+        fzip = read(environ, length)
         report = readReport(fzip.name, environ)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         needStoreReport = False
         if 'configInfo' in report and report['configInfo']['name'] in prefs.CONFIGS:
-
             try:
                 cur = conn.cursor()
                 cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
@@ -757,10 +762,11 @@ function selectNetwork(network) {
                 print(repr(e), file=environ["wsgi.errors"])
                 raise
 
-            for ver in prefs.CONFIGS[report['configInfo']['name']][0]:
-                if ver == report['configInfo']['version'][:len(ver)]:
-                    needStoreReport = True
-                    break
+            if not inStopLists(environ):
+                for ver in prefs.CONFIGS[report['configInfo']['name']][0]:
+                    if ver == report['configInfo']['version'][:len(ver)]:
+                        needStoreReport = True
+                        break
 
         if needStoreReport:
             #  Если IP не в стоплисте и нет стека, ошибки или информации и конфе или ошибка во внешних объектах, то игнорируем отчет, так как нам интересны только ошибки модулей нашей конфы
