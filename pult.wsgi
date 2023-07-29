@@ -932,16 +932,22 @@ function selectNetwork(network) {
         print("<link rel='stylesheet' href='", prefs.SITE_URL, "/style.css'>", sep='', file=output)
         print("<title>Пользователи конфигураций</title>", sep='', file=output)
         print("</head><body><h2>Пользователи конфигураций, отправившие отчеты об ошибках</h2>", sep='', file=output)
+        print("<p><small><span class='marked'>Бирюзовый фон</span> - отчеты регистрируются в соответствии с настройками</small></p>", sep='', file=output)
 
         arms = 0
         clients = 0
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         cur = conn.cursor()
-        cur.execute("select name, org, configName, configVersion, count(clientID),min(REMOTE_ADDR) from clients left join whois on ip=REMOTE_ADDR group by configName, configVersion, name, org")
+        cur.execute("select name, ifnull(org, name), configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR group by configName, configVersion, ifnull(org, name)")
         print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
         for r in cur.fetchall():
-            print("<tr><td>",r[0] if r[0] is not None else r[5],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
+            style = ''
+            for ver in prefs.CONFIGS[r[2]][0]:
+                if ver == r[3][:len(ver)]:
+                    style = " class='marked'"
+                    break
+            print("<tr",style,"><td>",r[0],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
             clients += 1
             arms += r[4]
         cur.close()
@@ -1131,7 +1137,7 @@ function selectNetwork(network) {
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in 
-		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}') 
+		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}' or whois.org='{network}') 
 		order by issue.time desc, issue.issueId desc"""
         cur = conn.cursor()
         cur.execute(SQLPacket)
