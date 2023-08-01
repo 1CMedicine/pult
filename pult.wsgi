@@ -394,8 +394,12 @@ def errorInConf(errors, stack, environ):
             print("e12:", errors[-1][0], file=environ["wsgi.errors"])
             return False
 
-        if errors[0][0].startswith('ОбщийМодуль.ЭлектроннаяПодпись') or errors[0][0].startswith('ОбщийМодуль.РаботаСЭП'):   # при проблемах с криптопровайдером в этом модуле генеряться ошибки
+        if errors[0][0].startswith('{ОбщийМодуль.ЭлектроннаяПодпись') or errors[0][0].startswith('{ОбщийМодуль.РаботаСЭП'):   # при проблемах с криптопровайдером в этом модуле генеряться ошибки
             print("e13:", errors[0][0], file=environ["wsgi.errors"])
+            return False
+
+        if errors[0][0].startswith('{ОбщийМодуль.НапоминанияПользователяГлобальный') or errors[0][0].startswith('{ОбщийМодуль.СтандартныеПодсистемы') or errors[0][0].startswith('{ОбщийМодуль.ОбработкаНовостей') or errors[0][0].startswith('{ОбщийМодуль.СоединенияИБГлобальный'):   # БСП
+            print("e14:", errors[0][0], file=environ["wsgi.errors"])
             return False
 
         if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
@@ -1163,7 +1167,7 @@ function selectNetwork(network) {
 <a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a><br>''', sep='', end='', file=output)
         if url[1][0] == 'e' :
-            print('''<a href="''', prefs.SITE_URL, '''/s/preErrorsList">Подозреня на ошибку (менее ''',MIN_REPORTS,''' отчетов)</a></p>''', sep='', end='', file=output)
+            print('''<a href="''', prefs.SITE_URL, '''/s/preErrorsList">Подозрения на ошибку (менее ''',MIN_REPORTS,''' отчетов)</a></p>''', sep='', end='', file=output)
         else:
             print('''<a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', end='', file=output)
         print('</body></html>', sep='', end='', file=output)
