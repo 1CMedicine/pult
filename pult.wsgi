@@ -829,20 +829,20 @@ function selectNetwork(network) {
                 else:
                     changeEnabled = issue[1]
                     cnt = issue[2]+1
-                    issue = issue[0]
+                    issueid = issue[0]
                     if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
                         needSendMail = True
                         cur = conn.cursor()
-                        cur.execute("insert into smtpQueue values (?)", (issue,))
+                        cur.execute("insert into smtpQueue values (?)", (issueid,))
                         cur.close()
 
                     cur = conn.cursor()
-                    cur.execute("update issue set time=?, cnt=? where issueId=?", (time, issue, cnt))
+                    cur.execute("update issue set time=?, cnt=? where issueId=?", (time, cnt, issueid))
                     cur.close()
 
                     prev_reports = None
                     if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
-                        i = (issue, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
+                        i = (issueid, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
                         prev_reports = None
                         if 'screenshot' in report and report['screenshot'] is not None:
                             cur = conn.cursor()
@@ -875,12 +875,12 @@ function selectNetwork(network) {
                             cur.execute(SQLPacket)
                             cur.close()
                         else:
-                            stack = insertReportStack(conn, report, issue)
-                            insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
+                            stack = insertReportStack(conn, report, issueid)
+                            insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                             needStoreReport = True
                     else:
-                        stack = insertReportStack(conn, report, issue)
-                        insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
+                        stack = insertReportStack(conn, report, issueid)
+                        insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                         needStoreReport = True
 
                 conn.commit()
