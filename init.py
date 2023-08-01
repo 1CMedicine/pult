@@ -29,6 +29,7 @@ cur.execute("""create table if not exists issue (
     markedTime TEXT NOT NULL DEFAULT '',
     time TEXT NOT NULL,
     changeEnabled BOOLEAN NULL CHECK (changeEnabled IN (0)),
+    cnt INTEGER NOT NULL DEFAULT 1,
     UNIQUE(errors)
 );""")
 

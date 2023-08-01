@@ -26,6 +26,8 @@ if local_path not in sys.path:
 
 import prefs
 
+MIN_REPORTS = 3   # число отчетов от разных юзеров после которого ошибка попадает на рассмотрение
+
 CONFIG_NAMES = []
 for name in prefs.CONFIGS:
     CONFIG_NAMES.append(name)
@@ -74,7 +76,7 @@ def prepareErrorTableLine(r, output, secret, issueN):
         print(" class='original_conf'", sep='', end='', file=output)
     print(">", sep='', end='', file=output)
     if issueN == 0:
-        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]).zfill(5),"</a></span><br><span class='descTime'>",r[9],"</span></td>", sep='', file=output)
+        print("<td align='center'><span class='errorId'><a href='", prefs.SITE_URL, "/s" if secret else "", "/reports/",str(r[0]),"'>",str(r[0]).zfill(5),"</a></span><br><span class='descTime'>",r[9],"<br>",r[11],"</span></td>", sep='', file=output)
 
     errors_txt = r[1]+"<br><br>"
     try:
@@ -392,6 +394,10 @@ def errorInConf(errors, stack, environ):
             print("e12:", errors[-1][0], file=environ["wsgi.errors"])
             return False
 
+        if errors[0][0].startswith('ОбщийМодуль.ЭлектроннаяПодпись') or errors[0][0].startswith('ОбщийМодуль.РаботаСЭП'):   # при проблемах с криптопровайдером в этом модуле генеряться ошибки
+            print("e13:", errors[0][0], file=environ["wsgi.errors"])
+            return False
+
         if errors[-1][0].startswith('Недостаточно прав') or errors[-1][0].startswith('Нарушение прав доступа') or (len(errors[-1][1]) > 0 and errors[-1][1][0] == "AccessViolation"):
             print("r1:", str(errors[-1]), file=environ["wsgi.errors"])
             return False
@@ -447,6 +453,10 @@ def errorInConf(errors, stack, environ):
 
             if s1[-1].find('ВнешняяОбработка') != -1 or s1[-1].find('ВнешнийОбъект') != -1:
                 print("s7:", s1[-1], file=environ["wsgi.errors"])
+                return False
+
+            if s.startswith('Обработка.ТестированиеШМД') or s.startswith('"Справочник.ВизуализаторыМедицинскихДокументов') or s.startswith('Обработка.ШМДВебДокумента'):
+                print("s8:", s, file=environ["wsgi.errors"])
                 return False
 
     except:
@@ -790,7 +800,7 @@ function selectNetwork(network) {
                 errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
                 cur = conn.cursor()
-                cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
+                cur.execute("select issueId, changeEnabled, cnt from issue where errors=?", (errors,))
                 issue = cur.fetchone()
                 cur.close()
 
@@ -816,17 +826,18 @@ function selectNetwork(network) {
                     insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
                     needStoreReport = True
 
-                    if len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
-                        cur = conn.cursor()
-                        cur.execute("insert into smtpQueue values (?)", (issue,))
-                        needSendMail = True
-                        cur.close()
                 else:
                     changeEnabled = issue[1]
+                    cnt = issue[2]+1
                     issue = issue[0]
+                    if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                        needSendMail = True
+                        cur = conn.cursor()
+                        cur.execute("insert into smtpQueue values (?)", (issue,))
+                        cur.close()
 
                     cur = conn.cursor()
-                    cur.execute("update issue set time=? where issueId=?", (time, issue))
+                    cur.execute("update issue set time=?, cnt=? where issueId=?", (time, issue, cnt))
                     cur.close()
 
                     prev_reports = None
@@ -1084,7 +1095,7 @@ function selectNetwork(network) {
         conf_number = int(url[2])
     except:
         pass
-    if len(url) > 1 and url[1] == 'errorsList' and (len(url) == 2 or (len(url) == 3 and not url2_is_d) or (len(url) == 3 and url2_is_d and conf_number < len(CONFIG_NAMES))):
+    if len(url) > 1 and url[1] in ('errorsList', 'preErrorsList') and (len(url) == 2 or (len(url) == 3 and not url2_is_d) or (len(url) == 3 and url2_is_d and conf_number < len(CONFIG_NAMES))):
         output = StringIO()
         print('''<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
@@ -1123,21 +1134,24 @@ function selectNetwork(network) {
         conn.execute("PRAGMA foreign_keys=OFF;")
         cur = conn.cursor()
         if len(url) == 2:
-            SQLPacket = """select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled 
+            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled, issue.cnt
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
+		where cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
 		order by issue.time desc, issue.issueId desc"""
         elif url2_is_d:
-            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled 
+            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
 		where issue.issueId in (select distinct issueId from reportStack where configName='{CONFIG_NAMES[conf_number]}') 
+		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
 		order by issue.time desc, issue.issueId desc"""
         else:
-            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled 
+            SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in 
 		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}' or whois.org='{network}') 
+		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
 		order by issue.time desc, issue.issueId desc"""
         cur = conn.cursor()
         cur.execute(SQLPacket)
@@ -1147,8 +1161,12 @@ function selectNetwork(network) {
 
         print('''<p><a href='https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262'>Документация на ИТС по отчету об ошибке</a></br>
 <a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
-<a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a></p>
-</body></html>''', sep='', end='', file=output)
+<a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a><br>''', sep='', end='', file=output)
+        if url[1][0] == 'e' :
+            print('''<a href="''', prefs.SITE_URL, '''/s/preErrorsList">Подозреня на ошибку (менее ''',MIN_REPORTS,''' отчетов)</a></p>''', sep='', end='', file=output)
+        else:
+            print('''<a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', end='', file=output)
+        print('</body></html>', sep='', end='', file=output)
 
         ret = output.getvalue().encode('UTF-8')
         start_response('200 OK', [
