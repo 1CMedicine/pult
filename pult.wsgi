@@ -157,7 +157,7 @@ def readReport(fzip_name, environ):
 def send_mail():
     conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
     cur = conn.cursor()
-    SQLPacket = "select smtpQueue.issueId, reportStack.configName from smtpQueue inner join reportStack on reportStack.issueId=smtpQueue.issueId"
+    SQLPacket = "select distinct smtpQueue.issueId, reportStack.configName from smtpQueue inner join reportStack on reportStack.issueId=smtpQueue.issueId"
     cur.execute(SQLPacket)
     errors = {}
     for r in cur.fetchall():
@@ -832,19 +832,11 @@ function selectNetwork(network) {
 
                 else:
                     changeEnabled = issue[1]
-                    cnt = issue[2]+1
                     issueid = issue[0]
-                    if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
-                        needSendMail = True
-                        cur = conn.cursor()
-                        cur.execute("insert into smtpQueue values (?)", (issueid,))
-                        cur.close()
-
                     cur = conn.cursor()
-                    cur.execute("update issue set time=?, cnt=? where issueId=?", (time, cnt, issueid))
+                    cur.execute("update issue set time=? where issueId=?", (time, issueid))
                     cur.close()
 
-                    prev_reports = None
                     if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
                         i = (issueid, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
                         prev_reports = None
@@ -879,6 +871,16 @@ function selectNetwork(network) {
                             cur.execute(SQLPacket)
                             cur.close()
                         else:
+                            cnt = issue[2]+1
+                            cur = conn.cursor()
+                            cur.execute("update issue set cnt=? where issueId=?", (cnt, issueid))
+                            cur.close()
+                            if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                                needSendMail = True
+                                cur = conn.cursor()
+                                cur.execute("insert into smtpQueue values (?)", (issueid,))
+                                cur.close()
+
                             stack = insertReportStack(conn, report, issueid)
                             insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                             needStoreReport = True
