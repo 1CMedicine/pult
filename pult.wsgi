@@ -700,17 +700,17 @@ margin: 0px 10px 5px 10px;
         input.parentElement.parentElement.classList.add("marked")
     }
 }
-function selectConfig(configName) {
+function selectConfig(configName, errorsList) {
     if (configName != 'sn')
-        document.location.href="''', prefs.SITE_URL, '''/s/errorsList/"+configName.substring(1)
+        document.location.href="''', prefs.SITE_URL, '''/s/"+errorsList+"/"+configName.substring(1)
     else
-        document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
+        document.location.href="''', prefs.SITE_URL, '''/s/"+errorsList
 }
-function selectNetwork(network) {
+function selectNetwork(network, errorsList) {
     if (network != '')
-        document.location.href="''', prefs.SITE_URL, '''/s/errorsList/"+network.replace(/\//g, "&frasl;")
+        document.location.href="''', prefs.SITE_URL, '''/s/"+errorsList+"/"+network.replace(/\//g, "&frasl;")
     else
-        document.location.href="''', prefs.SITE_URL, '''/s/errorsList"
+        document.location.href="''', prefs.SITE_URL, '''/s/"+errorsList
 }
 ''', sep='', file=output)
 
@@ -1107,15 +1107,17 @@ function selectNetwork(network) {
 <meta charset='utf-8'>
 <link rel='stylesheet' href="''', prefs.SITE_URL, '''/style.css"/>
 <script src="''', prefs.SITE_URL, '''/tables.js"></script>
-<title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title>
-</head><body><H2>Список ошибок сервиса регистрации ошибок</H2>
-<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
+<title>Список ошибок сервиса регистрации ошибок 1С:Медицина</title></head><body>''', sep='', file=output)
+        if url[1][0] == 'e':
+            print('''<H2>Список ошибок сервиса регистрации ошибок</H2>''', sep='', file=output)
+        else:
+            print('''<H2>Подозрения на ошибку (менее ''',MIN_REPORTS,''' отчетов)</H2>''', sep='', file=output)
+        print('''<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
 <span class='marked'>Бирюзовый фон</span> - есть отметка<br>
-Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small></p>
-''', sep='', file=output)
+Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small></p>''', sep='', file=output)
 
         if secret:
-            print("<p>Фильтры на: конфигурацию - <select name='configName' size='1' onchange='selectConfig(this.value)'>", sep='', file=output)
+            print("""<p>Фильтры на: конфигурацию - <select name="configName" size="1" onchange="selectConfig(this.value,'""",url[1],"""')">""", sep='', file=output)
 
             if len(url) == 2 or len(url) == 3 and not url2_is_d:
                 print("<option value='sn' selected/>", sep='', file=output)
@@ -1132,9 +1134,9 @@ function selectNetwork(network) {
                     print("<option value='s", i, "'>", CONFIG_NAMES[i], "</option>", sep='', file=output)
             print("</select> &nbsp;&nbsp;&nbsp;", sep='', file=output)
             if len(url) == 3 and not url2_is_d:
-                print("клиентский FQDN/сеть - <input id='network' autocomplete='on' type='text' size='30' name='network' value='", network, "'onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
+                print("""клиентский FQDN/сеть - <input id="network" autocomplete="on" type="text" size="30" name="network" value='""", network, """' onchange="selectNetwork(this.value,'""",url[1],"""')"/></p>""", sep='', file=output)
             else:
-                print("клиентский FQDN/сеть - <input id='network' autocomplete='on' type='text' size='30' name='network' onchange='selectNetwork(this.value)'/></p>", sep='', file=output)
+                print("""клиентский FQDN/сеть - <input id="network" autocomplete="on" type="text" size="30" name="network" onchange="selectNetwork(this.value,'""",url[1],"""')"/></p>""", sep='', file=output)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=OFF;")
