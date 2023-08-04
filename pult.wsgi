@@ -804,7 +804,7 @@ function selectNetwork(network, errorsList) {
                 errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
                 cur = conn.cursor()
-                cur.execute("select issueId, changeEnabled, cnt from issue where errors=?", (errors,))
+                cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
                 issue = cur.fetchone()
                 cur.close()
 
@@ -871,19 +871,28 @@ function selectNetwork(network, errorsList) {
                             cur.execute(SQLPacket)
                             cur.close()
                         else:
-                            cnt = issue[2]+1
+                            stack = insertReportStack(conn, report, issueid)
+                            insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
+                            needStoreReport = True
+
+                            cur = conn.cursor()
+                            cur.execute('''select count(*) from (select *
+				from issue
+				inner join reportStack on reportStack.issueId=issue.issueId
+				inner join report on reportStack.stackId=report.reportStackId
+				where issue.issueId=? group by clientID)''', (issueid,))
+                            cnt = cur.fetchone()[0]
+                            cur.close()
+
                             cur = conn.cursor()
                             cur.execute("update issue set cnt=? where issueId=?", (cnt, issueid))
                             cur.close()
+
                             if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
                                 needSendMail = True
                                 cur = conn.cursor()
                                 cur.execute("insert into smtpQueue values (?)", (issueid,))
                                 cur.close()
-
-                            stack = insertReportStack(conn, report, issueid)
-                            insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
-                            needStoreReport = True
                     else:
                         stack = insertReportStack(conn, report, issueid)
                         insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
@@ -1146,21 +1155,21 @@ function selectNetwork(network, errorsList) {
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
 		where cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
-		order by issue.time desc, issue.issueId desc"""
+		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         elif url2_is_d:
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
 		where issue.issueId in (select distinct issueId from reportStack where configName='{CONFIG_NAMES[conf_number]}') 
 		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
-		order by issue.time desc, issue.issueId desc"""
+		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         else:
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in 
 		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}' or whois.org='{network}') 
 		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
-		order by issue.time desc, issue.issueId desc"""
+		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         cur = conn.cursor()
         cur.execute(SQLPacket)
         prepareErrorTable(cur, output, secret)
