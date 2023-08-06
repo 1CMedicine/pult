@@ -820,7 +820,7 @@ function selectNetwork(network, errorsList) {
                     cur.close()
 
                     cur = conn.cursor()
-                    cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
+                    cur.execute("select issueId, changeEnabled, cnt from issue where errors=?", (errors,))
                     row = cur.fetchone()
                     issue = row[0]
                     changeEnabled = row[1]
@@ -871,6 +871,7 @@ function selectNetwork(network, errorsList) {
                             cur.execute(SQLPacket)
                             cur.close()
                         else:
+                            cnt = row[2]
                             stack = insertReportStack(conn, report, issueid)
                             insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                             needStoreReport = True
@@ -881,14 +882,14 @@ function selectNetwork(network, errorsList) {
 				inner join reportStack on reportStack.issueId=issue.issueId
 				inner join report on reportStack.stackId=report.reportStackId
 				where issue.issueId=? group by clientID)''', (issueid,))
-                            cnt = cur.fetchone()[0]
+                            cnt2 = cur.fetchone()[0]
                             cur.close()
 
                             cur = conn.cursor()
-                            cur.execute("update issue set cnt=? where issueId=?", (cnt, issueid))
+                            cur.execute("update issue set cnt=? where issueId=?", (cnt2, issueid))
                             cur.close()
 
-                            if cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                            if cnt != cnt2 and cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
                                 needSendMail = True
                                 cur = conn.cursor()
                                 cur.execute("insert into smtpQueue values (?)", (issueid,))
