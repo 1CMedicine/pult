@@ -26,7 +26,6 @@ if local_path not in sys.path:
 
 import prefs
 
-MIN_REPORTS = 3   # число отчетов от разных юзеров после которого ошибка попадает на рассмотрение
 
 CONFIG_NAMES = []
 for name in prefs.CONFIGS:
@@ -275,7 +274,7 @@ def whois_cache(conn, environ):
                 conn.commit()
 
 
-def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
+def insertReport(conn, report, stackId, fn, environ, issueId, changeEnabled):
     i = (report['time'], 
         report['sessionInfo']['userName'] if 'userName' in report['sessionInfo'] else "", 
         report['clientInfo']['appVersion'], 
@@ -300,7 +299,7 @@ def insertReport(conn, report, stackId, fn, environ, issue, changeEnabled):
 
     if not report['configInfo']['changeEnabled'] and changeEnabled != 0:
         cur = conn.cursor()
-        cur.execute("update issue set changeEnabled=0 where issueId=(?)", (issue,))
+        cur.execute("update issue set changeEnabled=0 where issueId=(?)", (issueId,))
         cur.close()
 
 
@@ -804,7 +803,7 @@ function selectNetwork(network, errorsList) {
                 errors = u''.join([c for c in errors if unicodedata.category(c) in ('Lu', 'Ll') or c in string.printable])
 
                 cur = conn.cursor()
-                cur.execute("select issueId, changeEnabled from issue where errors=?", (errors,))
+                cur.execute("select issueId, changeEnabled, cnt, marked from issue where errors=?", (errors,))
                 issue = cur.fetchone()
                 cur.close()
 
@@ -822,17 +821,19 @@ function selectNetwork(network, errorsList) {
                     cur = conn.cursor()
                     cur.execute("select issueId, changeEnabled, cnt from issue where errors=?", (errors,))
                     row = cur.fetchone()
-                    issue = row[0]
+                    issueid = row[0]
                     changeEnabled = row[1]
+                    cnt = row[2]
                     cur.close()
 
-                    stack = insertReportStack(conn, report, issue)
-                    insertReport(conn, report, stack, fn, environ, issue, changeEnabled)
+                    stack = insertReportStack(conn, report, issueid)
+                    insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                     needStoreReport = True
-
                 else:
-                    changeEnabled = issue[1]
                     issueid = issue[0]
+                    changeEnabled = issue[1]
+                    cnt = issue[2]
+                    marked = issue[3]
                     cur = conn.cursor()
                     cur.execute("update issue set time=? where issueId=?", (time, issueid))
                     cur.close()
@@ -871,7 +872,6 @@ function selectNetwork(network, errorsList) {
                             cur.execute(SQLPacket)
                             cur.close()
                         else:
-                            cnt = row[2]
                             stack = insertReportStack(conn, report, issueid)
                             insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                             needStoreReport = True
@@ -889,7 +889,7 @@ function selectNetwork(network, errorsList) {
                             cur.execute("update issue set cnt=? where issueId=?", (cnt2, issueid))
                             cur.close()
 
-                            if cnt != cnt2 and cnt == MIN_REPORTS and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                            if cnt != cnt2 and cnt == prefs.MIN_REPORTS and marked is None and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
                                 needSendMail = True
                                 cur = conn.cursor()
                                 cur.execute("insert into smtpQueue values (?)", (issueid,))
@@ -1121,7 +1121,7 @@ function selectNetwork(network, errorsList) {
         if url[1][0] == 'e':
             print('''<H2>Список ошибок сервиса регистрации ошибок</H2>''', sep='', file=output)
         else:
-            print('''<H2>Подозрения на ошибку (менее ''',MIN_REPORTS,''' отчетов)</H2>''', sep='', file=output)
+            print('''<H2>Подозрения на ошибку (менее ''',prefs.MIN_REPORTS,''' отчетов)</H2>''', sep='', file=output)
         print('''<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
 <span class='marked'>Бирюзовый фон</span> - есть отметка<br>
 Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small></p>''', sep='', file=output)
@@ -1155,21 +1155,21 @@ function selectNetwork(network, errorsList) {
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,changeEnabled, issue.cnt
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
-		where cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
+		where cnt{'>=' if url[1][0] == 'e' else '<'}{prefs.MIN_REPORTS}
 		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         elif url2_is_d:
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId 
 		where issue.issueId in (select distinct issueId from reportStack where configName='{CONFIG_NAMES[conf_number]}') 
-		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
+		and cnt{'>=' if url[1][0] == 'e' else '<'}{prefs.MIN_REPORTS}
 		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         else:
             SQLPacket = f"""select issue.issueId,errors,configName,configVersion,extentions,marked,markedUser,markedTime,stackId,issue.time,issue.changeEnabled, issue.cnt 
 		from issue 
 		inner join reportStack on reportStack.issueId=issue.issueId where issue.issueId in 
 		    (select distinct issueId from report inner join whois on REMOTE_ADDR=ip inner join reportStack on reportStack.stackId=report.reportStackId where whois.name='{network}' or whois.org='{network}') 
-		and cnt{'>=' if url[1][0] == 'e' else '<'}{MIN_REPORTS}
+		and cnt{'>=' if url[1][0] == 'e' else '<'}{prefs.MIN_REPORTS}
 		order by issue.time desc, issue.cnt desc, issue.issueId desc"""
         cur = conn.cursor()
         cur.execute(SQLPacket)
@@ -1181,7 +1181,7 @@ function selectNetwork(network, errorsList) {
 <a href="''', prefs.SITE_URL, '''/s/clients">Список пользователей конфигураций</a></br>
 <a href="''', prefs.SITE_URL, '''/s/settings">Настройки сервиса</a><br>''', sep='', end='', file=output)
         if url[1][0] == 'e' :
-            print('''<a href="''', prefs.SITE_URL, '''/s/preErrorsList">Подозрения на ошибку (менее ''',MIN_REPORTS,''' отчетов)</a></p>''', sep='', end='', file=output)
+            print('''<a href="''', prefs.SITE_URL, '''/s/preErrorsList">Подозрения на ошибку (менее ''',prefs.MIN_REPORTS,''' отчетов)</a></p>''', sep='', end='', file=output)
         else:
             print('''<a href="''', prefs.SITE_URL, '''/s/errorsList">Список ошибок</a></p>''', sep='', end='', file=output)
         print('</body></html>', sep='', end='', file=output)
