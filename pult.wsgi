@@ -889,7 +889,7 @@ function selectNetwork(network, errorsList) {
                             cur.execute("update issue set cnt=? where issueId=?", (cnt2, issueid))
                             cur.close()
 
-                            if cnt != cnt2 and cnt == prefs.MIN_REPORTS and marked is None and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                            if cnt != cnt2 and cnt == prefs.MIN_REPORTS and marked != '' and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
                                 needSendMail = True
                                 cur = conn.cursor()
                                 cur.execute("insert into smtpQueue values (?)", (issueid,))
