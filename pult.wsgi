@@ -724,8 +724,10 @@ function selectNetwork(network, errorsList) {
     if environ['PATH_INFO'] == '/getInfo':
         needSendReport = False
         length = int(environ.get('CONTENT_LENGTH', '0'))
+        if length == 0:
+            raise Exception("CONTENT_LENGTH should not be equal 0")
         if length > 10000:   # 10 kb limit
-            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
+            raise Exception('File is too large - '+length)
         body = environ['wsgi.input'].read(length).decode('utf-8')
         if len(body) > 1:
             query = json.loads(body)
@@ -748,8 +750,10 @@ function selectNetwork(network, errorsList) {
 
     if environ['PATH_INFO'] == '/pushReport':
         length = int(environ.get('CONTENT_LENGTH', 0))
+        if length == 0:
+            raise Exception("CONTENT_LENGTH should not be equal 0")
         if length > 10000000:   # 10 mb limit
-            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
+            raise Exception('File is too large - '+length)
         fzip = read(environ, length)
         report = readReport(fzip.name, environ)
 
@@ -1197,6 +1201,8 @@ function selectNetwork(network, errorsList) {
     if secret and len(url) == 3 and url[1] == 'markError' and url[2].isdigit():         # только закрытая зона так как измение отметки
         output = StringIO()
         length= int(environ.get('CONTENT_LENGTH', '0'))
+        if length == 0:
+            raise Exception("CONTENT_LENGTH should not be equal 0")
         value = environ['wsgi.input'].read(length).decode('utf-8')
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
