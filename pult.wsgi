@@ -156,38 +156,37 @@ def readReport(fzip_name, environ):
 def send_mail():
     conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
     cur = conn.cursor()
-    SQLPacket = "select distinct smtpQueue.issueId, reportStack.configName from smtpQueue inner join reportStack on reportStack.issueId=smtpQueue.issueId"
+    SQLPacket = """select distinct smtpQueue.issueId, reportStack.configName, issue.errors from smtpQueue 
+	inner join reportStack on reportStack.issueId=smtpQueue.issueId
+	inner join issue on reportStack.issueId=issue.issueId"""
     cur.execute(SQLPacket)
-    errors = {}
+    errors = []
     for r in cur.fetchall():
-        if r[1] in errors:
-            errors[r[1]].append(str(r[0]))
-        else:
-            errors[r[1]] = [str(r[0])]
+        errors.append(r)
     cur.close()
 
     try:
+        SQLPacket = "delete from smtpQueue where issueId = ?"
         s = None
         s = smtplib.SMTP(prefs.SMTP_HOST, prefs.SMTP_PORT, timeout=10)
         s.set_debuglevel(1)
         #s.starttls()
         if len(prefs.SMTP_LOGIN) > 0:
             s.login(prefs.SMTP_LOGIN, prefs.SMTP_PASSWORD)
-        for configName in errors:
+
+        for r in errors:
             output = StringIO()
-            print('Новые ошибки в сервисе регистрации ошибок:', sep='', end='\n', file=output)
-            for r in errors[configName]:
-                print('   ', prefs.SITE_DOMAIN, prefs.SITE_URL, "/s/reports/", r, sep='', end='\n', file=output)
+            print('Новая ошибка в сервисе регистрации ошибок:  ', sep='', end='', file=output)
+            print(prefs.SITE_DOMAIN, prefs.SITE_URL, "/s/reports/", r[0], '\n', r[2], sep='', end='\n', file=output)
 
             msg = MIMEText(output.getvalue(), 'plain', 'utf-8')
-            msg['Subject'] = Header('Новые ошибки '+configName+' в сервисе регистрации ошибок', 'utf-8')
+            msg['Subject'] = Header('Ошибка '+r[1]+': '+r[2], 'utf-8')
             msg['From'] = prefs.SMTP_FROM
-            msg['To'] = ", ".join(prefs.CONFIGS[configName][1])
-            s.sendmail(msg['From'], prefs.CONFIGS[configName][1], msg.as_string())
+            msg['To'] = ", ".join(prefs.CONFIGS[r[1]][1])
+            s.sendmail(msg['From'], prefs.CONFIGS[r[1]][1], msg.as_string())
 
             cur = conn.cursor()
-            SQLPacket = "delete from smtpQueue where issueId in (" + ",".join(errors[configName]) + ")"
-            cur.execute(SQLPacket)
+            cur.execute(SQLPacket, (r[0],))
             cur.close()
             conn.commit();
             output.close()
@@ -724,10 +723,8 @@ function selectNetwork(network, errorsList) {
     if environ['PATH_INFO'] == '/getInfo':
         needSendReport = False
         length = int(environ.get('CONTENT_LENGTH', '0'))
-        if length == 0:
-            raise Exception("CONTENT_LENGTH should not be equal 0")
         if length > 10000:   # 10 kb limit
-            raise Exception('File is too large - '+length)
+            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
         body = environ['wsgi.input'].read(length).decode('utf-8')
         if len(body) > 1:
             query = json.loads(body)
@@ -750,17 +747,15 @@ function selectNetwork(network, errorsList) {
 
     if environ['PATH_INFO'] == '/pushReport':
         length = int(environ.get('CONTENT_LENGTH', 0))
-        if length == 0:
-            raise Exception("CONTENT_LENGTH should not be equal 0")
         if length > 10000000:   # 10 mb limit
-            raise Exception('File is too large - '+length)
+            raise Exception('File is too large - '+environ.get('CONTENT_LENGTH', 0))
         fzip = read(environ, length)
         report = readReport(fzip.name, environ)
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         needStoreReport = False
-        if 'configInfo' in report and report['configInfo']['name'] in prefs.CONFIGS:
+        if 'configInfo' in report and 'systemInfo' in report['configInfo'] and report['configInfo']['name'] in prefs.CONFIGS:
             try:
                 cur = conn.cursor()
                 cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
@@ -898,6 +893,7 @@ function selectNetwork(network, errorsList) {
                                 cur = conn.cursor()
                                 cur.execute("insert into smtpQueue values (?)", (issueid,))
                                 cur.close()
+                                print("debug: need send", sep=' ', end='', file=environ["wsgi.errors"])
                     else:
                         stack = insertReportStack(conn, report, issueid)
                         insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
@@ -1201,8 +1197,6 @@ function selectNetwork(network, errorsList) {
     if secret and len(url) == 3 and url[1] == 'markError' and url[2].isdigit():         # только закрытая зона так как измение отметки
         output = StringIO()
         length= int(environ.get('CONTENT_LENGTH', '0'))
-        if length == 0:
-            raise Exception("CONTENT_LENGTH should not be equal 0")
         value = environ['wsgi.input'].read(length).decode('utf-8')
 
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
