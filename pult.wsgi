@@ -755,7 +755,7 @@ function selectNetwork(network, errorsList) {
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         needStoreReport = False
-        if 'configInfo' in report and 'systemInfo' in report['configInfo'] and report['configInfo']['name'] in prefs.CONFIGS:
+        if 'configInfo' in report and 'systemInfo' in report['clientInfo'] and report['configInfo']['name'] in prefs.CONFIGS:
             try:
                 cur = conn.cursor()
                 cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
