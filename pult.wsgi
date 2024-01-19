@@ -837,67 +837,71 @@ function selectNetwork(network, errorsList) {
                     cur.execute("update issue set time=? where issueId=?", (time, issueid))
                     cur.close()
 
-                    if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
-                        i = (issueid, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
-                        prev_reports = None
-                        if 'screenshot' in report and report['screenshot'] is not None:
-                            cur = conn.cursor()
-                            # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                            cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
-                            prev_reports = cur.fetchone()
-                            cur.close()
-                        else:
-                            cur = conn.cursor()
-                            # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
-                            cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
-                            prev_reports = cur.fetchone()
-                            cur.close()
-
-                        if prev_reports is not None:
-                            descTime = report['time'][0:10]+" "+report['time'][11:]
-                            if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
-                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                                SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
-                            elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
-                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
-                                SQLPacket += "<span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
-                            elif prev_reports[2] is not None: 
-                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>'"
+                    if not(len(marked) > 1 and marked[0]) == "*":	# ошибка отмечена как неподлежащая регистрации
+                        if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
+                            i = (issueid, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
+                            prev_reports = None
+                            if 'screenshot' in report and report['screenshot'] is not None:
+                                cur = conn.cursor()
+                                # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                                cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where hasScreenshot=1 and file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
+                                prev_reports = cur.fetchone()
+                                cur.close()
                             else:
-                                SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+descTime+"</span>'"
-                            SQLPacket += " where rowid="+str(prev_reports[0])
+                                cur = conn.cursor()
+                                # в запросе не учитываем записи с пустыми отчетами (удаленные из файловой системы по ошибке). Такие записи оставляем для истории
+                                cur.execute("select report.rowid, report.count, report.userDescription from report inner join reportStack on reportStackId=stackId where file!='' and issueId=? and clientID=? and configName=? and configVersion=?", i)
+                                prev_reports = cur.fetchone()
+                                cur.close()
 
-                            cur = conn.cursor()
-                            cur.execute(SQLPacket)
-                            cur.close()
+                            if prev_reports is not None:
+                                descTime = report['time'][0:10]+" "+report['time'][11:]
+                                if prev_reports[2] is not None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
+                                    SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                                    SQLPacket += prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                                elif prev_reports[2] is None and 'userDescription' in report['errorInfo'] and report['errorInfo']['userDescription'] != '':
+                                    SQLPacket = "update report set count="+str(prev_reports[1]+1)+", time='"+report['time']+"', userDescription='"
+                                    SQLPacket += "<span class=\"descTime\">"+descTime+"</span>&nbsp;<span class=\"desc\">"+report['errorInfo']['userDescription']+"</span>'"
+                                elif prev_reports[2] is not None: 
+                                    SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='"+prev_reports[2] +"<br><span class=\"descTime\">"+descTime+"</span>'"
+                                else:
+                                    SQLPacket = "update report set count="+str(prev_reports[1]+1)+", userDescription='<span class=\"descTime\">"+descTime+"</span>'"
+                                SQLPacket += " where rowid="+str(prev_reports[0])
+
+                                cur = conn.cursor()
+                                cur.execute(SQLPacket)
+                                cur.close()
+                            else:
+                                stack = insertReportStack(conn, report, issueid)
+                                insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
+                                needStoreReport = True
+
+                                cur = conn.cursor()
+                                cur.execute('''select count(*) from (select *
+					from issue
+					inner join reportStack on reportStack.issueId=issue.issueId
+					inner join report on reportStack.stackId=report.reportStackId
+					where issue.issueId=? group by clientID)''', (issueid,))
+                                cnt2 = cur.fetchone()[0]
+                                cur.close()
+
+                                cur = conn.cursor()
+                                cur.execute("update issue set cnt=? where issueId=?", (cnt2, issueid))
+                                cur.close()
+
+                                if cnt != cnt2 and cnt == prefs.MIN_REPORTS and marked == '' and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
+                                    needSendMail = True
+                                    cur = conn.cursor()
+                                    cur.execute("insert into smtpQueue values (?)", (issueid,))
+                                    cur.close()
+                                    print("debug: need send", sep=' ', end='', file=environ["wsgi.errors"])
                         else:
                             stack = insertReportStack(conn, report, issueid)
                             insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
                             needStoreReport = True
 
-                            cur = conn.cursor()
-                            cur.execute('''select count(*) from (select *
-				from issue
-				inner join reportStack on reportStack.issueId=issue.issueId
-				inner join report on reportStack.stackId=report.reportStackId
-				where issue.issueId=? group by clientID)''', (issueid,))
-                            cnt2 = cur.fetchone()[0]
-                            cur.close()
-
-                            cur = conn.cursor()
-                            cur.execute("update issue set cnt=? where issueId=?", (cnt2, issueid))
-                            cur.close()
-
-                            if cnt != cnt2 and cnt == prefs.MIN_REPORTS and marked == '' and len(prefs.SMTP_HOST) > 0 and len(prefs.SMTP_FROM) > 0 and len(prefs.CONFIGS[report['configInfo']['name']][1]) > 0:
-                                needSendMail = True
-                                cur = conn.cursor()
-                                cur.execute("insert into smtpQueue values (?)", (issueid,))
-                                cur.close()
-                                print("debug: need send", sep=' ', end='', file=environ["wsgi.errors"])
                     else:
-                        stack = insertReportStack(conn, report, issueid)
-                        insertReport(conn, report, stack, fn, environ, issueid, changeEnabled)
-                        needStoreReport = True
+                        print("report already marked-'", marked, "' issueid=", issueid, sep='', end='', file=environ["wsgi.errors"])
 
                 conn.commit()
                 if needSendMail:
@@ -1124,7 +1128,8 @@ function selectNetwork(network, errorsList) {
             print('''<H2>Подозрения на ошибку (менее ''',prefs.MIN_REPORTS,''' отчетов)</H2>''', sep='', file=output)
         print('''<p><small><span class='original_conf'>Красный фон</span> - без метки и конфигурация клиента на полной поддержке<br>
 <span class='marked'>Бирюзовый фон</span> - есть отметка<br>
-Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small></p>''', sep='', file=output)
+Ошибки отсортированы в порядке получения последнего отчета (выше - воспроизвели позднее). См. дату под номером ошибки</small><br>
+        <small><b>*</b> в начале комментария метки - по этой ошибке отчеты не регистрировать</small></p>''', sep='', file=output)
 
         if secret:
             print("""<p>Фильтры на: конфигурацию - <select name="configName" size="1" onchange="selectConfig(this.value,'""",url[1],"""')">""", sep='', file=output)
