@@ -155,17 +155,18 @@ def readReport(fzip_name, environ):
 
 def send_mail():
     conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
-    cur = conn.cursor()
-    SQLPacket = """select distinct smtpQueue.issueId, reportStack.configName, issue.errors from smtpQueue 
-	inner join reportStack on reportStack.issueId=smtpQueue.issueId
-	inner join issue on reportStack.issueId=issue.issueId"""
-    cur.execute(SQLPacket)
-    errors = []
-    for r in cur.fetchall():
-        errors.append(r)
-    cur.close()
-
     try:
+        cur = conn.cursor()
+        SQLPacket = """select smtpQueue.issueId, min(reportStack.configName) configName, issue.errors from smtpQueue 
+		inner join reportStack on reportStack.issueId=smtpQueue.issueId
+		inner join issue on reportStack.issueId=issue.issueId
+		group by smtpQueue.issueId, issue.errors"""
+        cur.execute(SQLPacket)
+        errors = []
+        for r in cur.fetchall():
+            errors.append(r)
+        cur.close()
+
         SQLPacket = "delete from smtpQueue where issueId = ?"
         s = None
         s = smtplib.SMTP(prefs.SMTP_HOST, prefs.SMTP_PORT, timeout=10)
@@ -833,11 +834,11 @@ function selectNetwork(network, errorsList) {
                     changeEnabled = issue[1]
                     cnt = issue[2]
                     marked = issue[3]
-                    cur = conn.cursor()
-                    cur.execute("update issue set time=? where issueId=?", (time, issueid))
-                    cur.close()
 
                     if not(len(marked) > 1 and marked[0]) == "*":	# ошибка отмечена как неподлежащая регистрации
+                        cur = conn.cursor()
+                        cur.execute("update issue set time=? where issueId=?", (time, issueid))
+                        cur.close()
                         if 'systemInfo' in report['clientInfo'] and 'additionalFiles' not in report and 'additionalData' not in report:
                             i = (issueid, report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'])
                             prev_reports = None
