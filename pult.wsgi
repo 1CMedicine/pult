@@ -759,7 +759,7 @@ function selectNetwork(network, errorsList) {
         if 'configInfo' in report and 'systemInfo' in report['clientInfo'] and report['configInfo']['name'] in prefs.CONFIGS:
             try:
                 cur = conn.cursor()
-                cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                cur.execute("select count(*) from clients where clientID=? and configName=?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name']))
                 cnt = cur.fetchone()[0]
                 cur.close()
 
@@ -770,6 +770,16 @@ function selectNetwork(network, errorsList) {
                     conn.commit()
                     if prefs.USE_WHOIS:
                         whois_cache(conn, environ)
+                else:
+                    cur = conn.cursor()
+                    cur.execute("select count(*) from clients where clientID=? and configName=? and configVersion<>?", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                    cnt = cur.fetchone()[0]
+                    cur.close()
+
+                    if cnt != 0:		# было обновление версии у клиента
+                        cur = conn.cursor()
+                        cur.execute("update clients set configVersion=? where clientID=? and configName=? and configVersion<>?", (report['configInfo']['version'], report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                        cur.close()
 
             except Exception as e:
                 print(repr(e), file=environ["wsgi.errors"])
