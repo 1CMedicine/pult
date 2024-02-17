@@ -765,9 +765,8 @@ function selectNetwork(network, errorsList) {
 
                 if cnt == 0:
                     cur = conn.cursor()
-                    cur.execute("insert into clients values (?,?,?,?)", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], environ['REMOTE_ADDR']))
+                    cur.execute("insert into clients values (?,?,?,?,?)", (report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version'], environ['REMOTE_ADDR'], datetime.datetime.now().strftime('%d.%m.%y %H:%M')))
                     cur.close()
-                    conn.commit()
                     if prefs.USE_WHOIS:
                         whois_cache(conn, environ)
                 else:
@@ -778,8 +777,13 @@ function selectNetwork(network, errorsList) {
 
                     if cnt != 0:		# было обновление версии у клиента
                         cur = conn.cursor()
-                        cur.execute("update clients set configVersion=? where clientID=? and configName=? and configVersion<>?", (report['configInfo']['version'], report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                        cur.execute("update clients set configVersion=?, time=? where clientID=? and configName=? and configVersion<>?", (report['configInfo']['version'], datetime.datetime.now().strftime('%d.%m.%y %H:%M'), report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
                         cur.close()
+                    else:
+                        cur = conn.cursor()
+                        cur.execute("update clients set time=? where clientID=? and configName=? and configVersion=?", (datetime.datetime.now().strftime('%d.%m.%y %H:%M'), report['clientInfo']['systemInfo']['clientID'], report['configInfo']['name'], report['configInfo']['version']))
+                        cur.close()
+                conn.commit()
 
             except Exception as e:
                 print(repr(e), file=environ["wsgi.errors"])
@@ -981,15 +985,18 @@ function selectNetwork(network, errorsList) {
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
         cur = conn.cursor()
-        cur.execute("select name, ifnull(org, name), configName, configVersion, count(clientID) from clients left join whois on ip=REMOTE_ADDR group by configName, configVersion, ifnull(org, name)")
-        print("<table style='width: 100%; table-layout : fixed;' border=1><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th>", sep='', file=output)
+        cur.execute('''select name, ifnull(org, name), configName, configVersion, count(clientID), max(clients.time)
+		from clients left join whois on ip=REMOTE_ADDR 
+		group by ifnull(org, name), configName, configVersion
+		order by ifnull(org, name), configName, length(configVersion) DESC, configVersion DESC ''')
+        print("<table style='width: 100%; table-layout : fixed;' border=1><tr><th style='width: 10%'>FQDN или сеть</th><th style='width: 70%'>Описание</th><th style='width: 10%'>Конфигурация</th><th style='width: 10%'>Версия</th><th style='width: 5%'>АРМов</th><th style='width:7%'>Актуальность</th></tr>", sep='', file=output)
         for r in cur.fetchall():
             style = ''
             for ver in prefs.CONFIGS[r[2]][0]:
                 if ver == r[3][:len(ver)]:
                     style = " class='marked'"
                     break
-            print("<tr",style,"><td>",r[0],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td></tr>", sep='', file=output)
+            print("<tr",style,"><td>",r[0],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td><td>",r[5],"</td></tr>", sep='', file=output)
             clients += 1
             arms += r[4]
         cur.close()
