@@ -83,8 +83,8 @@ cur.execute("""create table if not exists clients (
     configName TEXT NOT NULL,
     configVersion TEXT NOT NULL,
     REMOTE_ADDR TEXT NOT NULL,
-    UNIQUE(clientID, configName, configVersion),
-    time TEXT NOT NULL
+    time TEXT NOT NULL,
+    UNIQUE(clientID, configName, configVersion)
 );""")
 
 cur.execute("CREATE INDEX IF NOT EXISTS report_reportstack_index ON report (reportStackId);")
