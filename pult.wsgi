@@ -981,6 +981,7 @@ function selectNetwork(network, errorsList) {
         print("<p><small><span class='marked'>Бирюзовый фон</span> - отчеты регистрируются в соответствии с настройками</small></p>", sep='', file=output)
 
         arms = 0
+        actual_arms = 0
         clients = 0
         conn = sqlite3.connect(prefs.DATA_PATH+"/reports.db")
         conn.execute("PRAGMA foreign_keys=ON;")
@@ -996,15 +997,21 @@ function selectNetwork(network, errorsList) {
                 if ver == r[3][:len(ver)]:
                     style = " class='marked'"
                     break
-            print("<tr",style,"><td>",r[0],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td><td>",r[5],"</td></tr>", sep='', file=output)
+
+            delta = datetime.datetime.now()-datetime.datetime.strptime(r[5], '%d.%m.%y %H:%M')
+            actual = delta.days< 180
+            print("<tr",style,"><td>",r[0],"</td><td>",r[1] if r[1] is not None else "","</td><td>",r[2],"</td><td align='center'>",r[3],"</td><td align='center'>",r[4],"</td><td>",r[5] if actual else '-',"</td></tr>", sep='', file=output)
             clients += 1
+            if actual:
+                actual_arms += r[4]
             arms += r[4]
         cur.close()
         print("</table>", file=output)
         conn.close()
 
         print('<p>Клиентов (сетей) - ', clients, sep='', end='<br>', file=output)
-        print('АРМов - ', arms, sep='', file=output)
+        print('АРМов - ', arms, sep='', end='<br>', file=output)
+        print('Актуальных АРМов - ', actual_arms, sep='', file=output)
 
         print("<hr><h3>Перейти:</h3><p><a href='", prefs.SITE_URL, "/s/errorsList'>Список ошибок</a></p>", sep='', file=output)
         print("</body></html>", sep='', end='', file=output)
