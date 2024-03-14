@@ -17,7 +17,7 @@ if local_path not in sys.path:
 
 import prefs
 
-conn = sqlite3.connect(prefs.DATA_PATH+'/reports.db')
+conn = sqlite3.connect(os.path.join(prefs.DATA_PATH, 'reports.db'))
 conn.execute("PRAGMA foreign_keys=ON;")
 cur = conn.cursor()
 
@@ -93,4 +93,5 @@ conn.commit()
 
 uid = pwd.getpwnam(prefs.APACHE_USER).pw_uid
 gid = grp.getgrnam(prefs.APACHE_GROUP).gr_gid
-os.chown(prefs.DATA_PATH+"/reports.db", uid, gid)
+os.chown(os.path.join(prefs.DATA_PATH, "reports.db"), uid, gid)
+os.chown(prefs.DATA_PATH, uid, gid)

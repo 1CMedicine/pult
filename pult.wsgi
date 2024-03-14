@@ -1076,7 +1076,7 @@ function selectNetwork(network, errorsList) {
 
     url = environ['PATH_INFO'].split('/')
     secret = True if len(url) > 1 and url[1] == 's' else False
-    if secret:          # все нижелащие url могут находится в зоне с ограниченным доступом, префикс может быть равен 's'
+    if secret:          # все нижележащие url могут находится в зоне с ограниченным доступом, префикс может быть равен 's'
         s = url.pop(0)
 
     if secret and len(url) == 3 and url[1] == 'delete' and url[2].isdigit():
