@@ -1,3 +1,6 @@
+# Проект переехад на https://gitverse.ru/1CMedicine/pult
+
+-------------------------------------------
 # pult - реализация на Python сервиса регистрации ошибок для 1С:Предприятие 8
 
 Сервис осуществляет регистрацию отчетов об ошибках, отправляемых 1С:Предприятие. См. https://its.1c.ru/db/instrpoly3#content:1190:hdoc, https://its.1c.ru/db/v8320doc#bookmark:dev:TI000002262,  https://wonderland.v8.1c.ru/blog/razvitie-mekhanizma-otobrazheniya-oshibok/.
